@@ -1,0 +1,9 @@
+{
+  "name": "gated immelmann",
+  "segments": [
+    {"type": "wait_alt", "altitude_m": 40, "tolerance_m": 3},
+    {"type": "pitch", "degrees": 180},
+    {"type": "roll", "degrees": 180},
+    {"type": "wait_time", "ms": 2000, "assist": true}
+  ]
+}
