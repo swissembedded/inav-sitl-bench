@@ -616,10 +616,12 @@ def sequence():
 
     min_align = 1.0
     z_at_first_pitch = None
+    seq_rows = []
     for i in range(int(35.0 / DT)):
         t0 = time.perf_counter()
         r = sim_step(msp, plane.acc_mg(), plane.gyro_dps16(), rc, baro_pa=plane.baro_pa())
         plane.step((r.stab_roll, r.stab_pitch, r.stab_yaw), DT)
+        seq_rows.append((i * DT, plane.z, plane.nose_elevation_deg(), *plane.q))
         from dynamics import rotate_earth_to_body
         min_align = min(min_align, rotate_earth_to_body(plane.q, (0, 0, 1))[2])
         if z_at_first_pitch is None and abs(plane.pitch_deg()) > 30.0:
@@ -633,6 +635,11 @@ def sequence():
     w, x, y, zc = plane.q
     roll_end = abs(math.degrees(math.atan2(2 * (w * x + y * zc), 1 - 2 * (x * x + y * y))))
     align_end = __import__("dynamics").rotate_earth_to_body(plane.q, (0, 0, 1))[2]
+
+    with open("sequence_log.csv", "w") as f:
+        f.write("t,z,nose_elev,qw,qx,qy,qz\n")
+        for row in seq_rows:
+            f.write(",".join(f"{v:.4f}" for v in row) + "\n")
 
     print(f"gate altitude at figure start: {z_at_first_pitch} m (gate 40)")
     print(f"inverted-pass {min_align:+.2f}, end roll {roll_end:.1f} deg, end upright {align_end:+.2f}, end z {plane.z:.1f} m")
@@ -741,6 +748,8 @@ def hover():
     arm(msp, plane, rc)
     rc[CH_THROTTLE] = 1400
 
+    hover_rows = []
+
     def fly(seconds, thrust_borne):
         zs = []
         last = None
@@ -750,6 +759,8 @@ def hover():
             thr01 = (last.stab_throttle + 1.0) / 2.0 if thrust_borne else None
             plane.step((last.stab_roll, last.stab_pitch, last.stab_yaw), DT, throttle01=thr01)
             zs.append(plane.z)
+            hover_rows.append((len(hover_rows) * DT, plane.z, plane.nose_elevation_deg(),
+                               (last.stab_throttle + 1.0) / 2.0))
             s = DT - (time.perf_counter() - t0)
             if s > 0:
                 time.sleep(s)
@@ -772,6 +783,11 @@ def hover():
     fly(3.0, True)
     climb = plane.z - z0
     print(f"pilot throttle override 3 s: climbed {climb:+.1f} m")
+
+    with open("hover_log.csv", "w") as f:
+        f.write("t,z,nose_elev,throttle01\n")
+        for row in hover_rows:
+            f.write(",".join(f"{v:.4f}" for v in row) + "\n")
 
     ok = drift < 6.0 and climb > 4.0
     print("hover", "PASS" if ok else "FAIL")
