@@ -82,10 +82,16 @@ trail, = ax.plot([], [], [], color="0.6", lw=1.2)
 seg_lines = [ax.plot([], [], [], lw=2.5)[0] for _ in SEGS]
 txt = ax.text2D(0.02, 0.95, "", transform=ax.transAxes, fontsize=10)
 mtxt = ax.text2D(0.02, 0.88, "", transform=ax.transAxes, fontsize=14, fontweight="bold", color="#d62728")
+axL = fig.add_axes([0.74, 0.42, 0.08, 0.10]); axR = fig.add_axes([0.85, 0.42, 0.08, 0.10])
+for a_ in (axL, axR):
+    a_.set_xlim(-1.2, 1.2); a_.set_ylim(-1.2, 1.2); a_.set_xticks([]); a_.set_yticks([])
+    a_.axhline(0, color="0.85", lw=0.7); a_.axvline(0, color="0.85", lw=0.7)
+axL.set_title("thr/rud", fontsize=7); axR.set_title("ail/ele", fontsize=7)
+dotL, = axL.plot([0], [0], "o", ms=7, color="#1f77b4")
+dotR, = axR.plot([0], [0], "o", ms=7, color="#1f77b4")
 import os
 if os.path.exists(f"jsbsim_params_{MAN}.txt"):
-    ptext = "controller settings:
-" + open(f"jsbsim_params_{MAN}.txt").read()
+    ptext = "controller settings:" + chr(10) + open(f"jsbsim_params_{MAN}.txt").read()
     fig.text(0.80, 0.62, ptext, fontsize=7, family="monospace", va="top",
              bbox=dict(boxstyle="round", fc="0.95", ec="0.7"))
 ax.set_title(f"INAV orientation hold vs JSBSim -- {MAN}")
@@ -103,7 +109,9 @@ def frame(i):
     txt.set_text(f"t={t[i]:5.1f}s  {ph[i].upper():7s}  roll={math.degrees(rpy[i][0]):+6.0f} deg  alt={z[i]:4.0f} m")
     marker.set_xdata([t[i], t[i]])
     mtxt.set_text(mode[i])
-    return seg_lines + [trail, txt, mtxt, marker]
+    dotL.set_data([st_rud[i]], [st_thr[i] * 2 - 1])
+    dotR.set_data([st_ail[i]], [-st_ele[i]])
+    return seg_lines + [trail, txt, mtxt, marker, dotL, dotR]
 
 anim = FuncAnimation(fig, frame, frames=len(rows), interval=60, blit=False)
 anim.save(f"jsbsim_{MAN}.mp4", writer=FFMpegWriter(fps=10, bitrate=1800), dpi=100)
