@@ -89,3 +89,31 @@ Portions of the quaternion/rotation math (conventions of
 `imuComputeQuaternionFromRPY`, `quaternionRotateVector`,
 `axisAngleToQuaternion`) are derived from
 [INAV](https://github.com/iNavFlight/inav), itself GPL-3.0-or-later.
+
+## JSBSim closed loop (headless, full aerodynamics)
+
+`jsbsim_plant.py` wraps [JSBSim](https://github.com/JSBSim-Team/jsbsim)
+(LGPL 2.1, `pip install jsbsim`) as a drop-in plant with the same sensor
+interface as `dynamics.PlaneModel` (`acc_mg` / `gyro_dps16` / `baro_pa`),
+feeding the same proven `MSP_SIMULATOR` injection path. Unlike the simple
+rigid-body plant this gives real aerodynamics: airspeed, lift, drag, stall
+and control authority all interact -- the energy model the built-in plant
+deliberately lacks.
+
+The default aircraft is `jsbsim/aircraft/aerobat3d`, a generic 1.5 m /
+1.6 kg RC 3D aerobat written for this project: symmetric airfoil (flies
+inverted as well as upright), oversized control surfaces, thrust/weight
+~1.4 (prop hang possible), direct thruster (no propeller torque yet).
+
+Workflow (SITL.exe running configurator-only, provisioned via
+`bench.py provision`):
+
+    python jsbsim_fly.py --flip-ele <inverted|knife_left|knife_right|hang>
+    python animate_jsbsim.py <maneuver>     # 3D replay video (mp4)
+    python plot_jsbsim.py                   # static 4-panel figure
+
+`--flip-ele` maps INAV's stabilized pitch onto JSBSim's inverted
+elevator-cmd convention. Each flight logs `jsbsim_log_<maneuver>.csv`
+(FC attitude vs JSBSim truth, IAS, altitude, controls, position); the
+replay renders the aircraft attitude in 3D above a synchronized
+attitude/IAS/altitude strip with a running time cursor.
