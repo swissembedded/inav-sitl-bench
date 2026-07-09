@@ -23,7 +23,9 @@ from matplotlib.animation import FuncAnimation, FFMpegWriter
 import imageio_ffmpeg
 matplotlib.rcParams['animation.ffmpeg_path'] = imageio_ffmpeg.get_ffmpeg_exe()
 
-rows = list(csv.DictReader(open(r"jsbsim_log.csv")))
+import sys
+MAN = sys.argv[1] if len(sys.argv) > 1 else "inverted"
+rows = list(csv.DictReader(open(f"jsbsim_log_{MAN}.csv")))
 STEP = 10                      # downsample
 rows = rows[::STEP]
 t   = [float(r["t"]) for r in rows]
@@ -107,5 +109,5 @@ def frame(i):
     return seg_lines + [trail, txt, mtxt, marker, dotL, dotR]
 
 anim = FuncAnimation(fig, frame, frames=len(rows), interval=60, blit=False)
-anim.save(r"jsbsim_flight.mp4", writer=FFMpegWriter(fps=10, bitrate=1800), dpi=100)
+anim.save(f"jsbsim_{MAN}.mp4", writer=FFMpegWriter(fps=10, bitrate=1800), dpi=100)
 print(f"written jsbsim_{MAN}.mp4,", len(rows), "frames")

@@ -57,7 +57,8 @@ def fc_att(m):
 
 m = MspClient()
 plant = JSBSimPlant()
-log = open(r"jsbsim_log.csv", "w")
+_man = next((a for a in sys.argv[1:] if not a.startswith("--")), "inverted")
+log = open(f"jsbsim_log_{_man}.csv", "w")
 log.write("t,phase,fc_roll,fc_pitch,fc_yaw,js_roll,js_pitch,js_yaw,ias,alt,ail,ele,thr,x,y\n")
 T0 = time.time()
 
