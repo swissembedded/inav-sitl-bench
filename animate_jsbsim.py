@@ -43,6 +43,11 @@ def stn(k, mid=1500.0, rng=500.0):
 st_ail, st_ele = stn("st_ail"), stn("st_ele")
 st_thr = [ (float(r.get("st_thr", 1000)) - 1000.0) / 1000.0 for r in rows ]
 st_rud = stn("st_rud")
+# FC control-surface commands (normalized -1..1), i.e. what the controller
+# drives onto aileron / elevator / rudder while the pilot sticks stay put.
+cs_ail = [float(r.get("ail", 0)) for r in rows]
+cs_ele = [float(r.get("ele", 0)) for r in rows]
+cs_rud = [float(r.get("rud", 0)) for r in rows]
 ias = [float(r["ias"]) for r in rows]
 COL = {"level": "#1f77b4", "invert": "#d62728"}
 
@@ -61,10 +66,11 @@ SEGS = [((-0.6, 0, 0), (1.0, 0, 0)),          # fuselage
         ((-0.6, -0.35, 0), (-0.6, 0.35, 0)),  # tailplane
         ((-0.6, 0, 0), (-0.6, 0, -0.45))]     # fin (up = -z in NED)
 
-fig = plt.figure(figsize=(9, 9))
-gs = fig.add_gridspec(3, 1, height_ratios=[2.4, 0.02, 1.0])
-ax = fig.add_subplot(gs[0], projection="3d")
-ax2 = fig.add_subplot(gs[2])
+fig = plt.figure(figsize=(11, 9))
+# left column: 3D replay (top) + synchronized time strip (bottom).
+# right column (x >= 0.72) is reserved for the info insets so nothing overlaps.
+ax = fig.add_axes([0.01, 0.40, 0.66, 0.52], projection="3d")
+ax2 = fig.add_axes([0.09, 0.07, 0.56, 0.24])
 ax2.plot(t, [math.degrees(r[0]) for r in rpy], "#d62728", lw=1.4, label="roll")
 ax2.plot(t, [math.degrees(r[1]) for r in rpy], "#1f77b4", lw=1.4, label="pitch")
 ax2.axhline(180, color="gray", ls=":", lw=0.8); ax2.axhline(-180, color="gray", ls=":", lw=0.8)
@@ -94,19 +100,39 @@ trail, = ax.plot([], [], [], color="0.6", lw=1.2)
 seg_lines = [ax.plot([], [], [], lw=2.5)[0] for _ in SEGS]
 txt = ax.text2D(0.02, 0.95, "", transform=ax.transAxes, fontsize=10)
 mtxt = ax.text2D(0.02, 0.88, "", transform=ax.transAxes, fontsize=14, fontweight="bold", color="#d62728")
-axL = fig.add_axes([0.74, 0.42, 0.08, 0.10]); axR = fig.add_axes([0.85, 0.42, 0.08, 0.10])
-for a_ in (axL, axR):
-    a_.set_xlim(-1.2, 1.2); a_.set_ylim(-1.2, 1.2); a_.set_xticks([]); a_.set_yticks([])
-    a_.axhline(0, color="0.85", lw=0.7); a_.axvline(0, color="0.85", lw=0.7)
-axL.set_title("thr/rud", fontsize=7); axR.set_title("ail/ele", fontsize=7)
-dotL, = axL.plot([0], [0], "o", ms=7, color="#1f77b4")
-dotR, = axR.plot([0], [0], "o", ms=7, color="#1f77b4")
+# --- right column of insets (x >= 0.72), stacked top -> bottom ---
 import os
 if os.path.exists(f"jsbsim_params_{MAN}.txt"):
     ptext = "controller settings:" + chr(10) + open(f"jsbsim_params_{MAN}.txt").read()
-    fig.text(0.80, 0.62, ptext, fontsize=7, family="monospace", va="top",
+    fig.text(0.72, 0.90, ptext, fontsize=7, family="monospace", va="top",
              bbox=dict(boxstyle="round", fc="0.95", ec="0.7"))
+# pilot stick inputs (what the human commands)
+axL = fig.add_axes([0.74, 0.50, 0.09, 0.10]); axR = fig.add_axes([0.87, 0.50, 0.09, 0.10])
+for a_ in (axL, axR):
+    a_.set_xlim(-1.2, 1.2); a_.set_ylim(-1.2, 1.2); a_.set_xticks([]); a_.set_yticks([])
+    a_.axhline(0, color="0.85", lw=0.7); a_.axvline(0, color="0.85", lw=0.7)
+axL.set_title("pilot thr/rud", fontsize=7); axR.set_title("pilot ail/ele", fontsize=7)
+dotL, = axL.plot([0], [0], "o", ms=7, color="#1f77b4")
+dotR, = axR.plot([0], [0], "o", ms=7, color="#1f77b4")
+# control-surface commands the FC drives (aileron / elevator / rudder)
+axS = fig.add_axes([0.74, 0.34, 0.22, 0.10])
+axS.set_xlim(-1.1, 1.1); axS.set_ylim(-0.6, 2.6)
+axS.set_yticks([0, 1, 2]); axS.set_yticklabels(["rudder", "elevator", "aileron"], fontsize=7)
+axS.set_xticks([]); axS.axvline(0, color="0.85", lw=0.7)
+axS.set_title("control surfaces (FC out)", fontsize=7)
+bars = axS.barh([0, 1, 2], [0, 0, 0], height=0.6,
+                color=["#2ca02c", "#1f77b4", "#d62728"])
 ax.set_title(f"INAV orientation hold vs JSBSim -- {MAN}")
+NOTES = {
+    "inverted":    "Inverted flight: rolled 180 deg and held, controller keeps altitude at ~50 kts.",
+    "knife_left":  "Knife-edge (left): rolls toward 90 deg, but the airframe has no fuselage lift, so it bleeds speed into a flat spin.",
+    "knife_right": "Knife-edge (right): as knife_left -- without fuselage lift the speed decays and it mushes.",
+    "hang":        "Prop-hang: nose held near vertical at near-zero airspeed; heading wanders.",
+    "roll_hold":   "Axial roll with altitude assist: controller rolls while trying to hold height.",
+    "floor_dive":  "Safety-floor deep dive: nose pushed down until the altitude floor catches and levels it.",
+}
+fig.text(0.5, 0.975, NOTES.get(MAN, ""), ha="center", va="top",
+         fontsize=9, style="italic", wrap=True)
 
 def frame(i):
     R = R_ned(*rpy[i])
@@ -123,7 +149,9 @@ def frame(i):
     mtxt.set_text(mode[i])
     dotL.set_data([st_rud[i]], [st_thr[i] * 2 - 1])
     dotR.set_data([st_ail[i]], [-st_ele[i]])
-    return seg_lines + [trail, txt, mtxt, marker, dotL, dotR]
+    for b, val in zip(bars, (cs_rud[i], cs_ele[i], cs_ail[i])):
+        b.set_width(val)
+    return seg_lines + [trail, txt, mtxt, marker, dotL, dotR] + list(bars)
 
 anim = FuncAnimation(fig, frame, frames=len(rows), interval=60, blit=False)
 outdir = "docs/videos"; os.makedirs(outdir, exist_ok=True)

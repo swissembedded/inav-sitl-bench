@@ -31,17 +31,29 @@ RC_LOW, RC_MID, RC_HIGH = 1000, 1500, 2000
 def rc_ch(thr=RC_LOW, arm=RC_LOW, angle=RC_LOW, invert=RC_LOW, sel=RC_LOW, ele=RC_MID, ail=RC_MID, rud=RC_MID):
     return [ail, ele, thr, rud, arm, angle, invert, sel]
 
-def mode_of(rc):
-    if rc[5] > 1700: base = "ANGLE"
-    elif rc[6] > 1700: base = "INVERT"
-    elif 1450 < rc[6] < 1700: base = "F ROLL"
-    elif 1150 < rc[6] < 1450: base = "FLOOR"
-    elif 1150 < rc[7] < 1450: base = "KNIFE L"
-    elif 1450 < rc[7] < 1750: base = "KNIFE R"
-    elif rc[7] >= 1750: base = "P-HANG"
-    else: base = "ACRO"
-    if base != "FLOOR" and 1150 < rc[6] < 1450: base += "+FLOOR"
-    return base
+# Real active flight mode, pulled from the FC itself (not re-derived from RC):
+# MSP_BOXIDS gives permanent box ids in active order, MSP_ACTIVEBOXES gives a
+# bit per active box in the same order. Orientation-hold sub-modes win over
+# ANGLE. permanentId map from src/main/fc/fc_msp_box.c.
+MSP_BOXIDS = 119
+MSP_ACTIVEBOXES = 113
+PERM_NAME = {69: "INVERT", 70: "KNIFE L", 71: "KNIFE R", 72: "P-HANG"}
+
+def read_boxids(m):
+    return list(m.request(MSP_BOXIDS))          # permanentId per active box
+
+def fc_mode(m, boxids):
+    bm = m.request(MSP_ACTIVEBOXES)
+    active = {perm for i, perm in enumerate(boxids)
+              if (i >> 3) < len(bm) and (bm[i >> 3] >> (i & 7)) & 1}
+    for perm in (69, 70, 71, 72):               # orientation sub-mode first
+        if perm in active:
+            return PERM_NAME[perm]
+    if 1 in active:                             # ANGLE
+        return "ANGLE"
+    if 0 in active:                             # armed, no ANGLE
+        return "ACRO"
+    return "DISARMED"
 
 FLAG_ARMED = 1 << 2
 FLAG_CAL = 1 << 9
@@ -59,7 +71,10 @@ m = MspClient()
 plant = JSBSimPlant()
 _man = next((a for a in sys.argv[1:] if not a.startswith("--")), "inverted")
 log = open(f"jsbsim_log_{_man}.csv", "w")
-log.write("t,phase,fc_roll,fc_pitch,fc_yaw,js_roll,js_pitch,js_yaw,ias,alt,ail,ele,thr,x,y\n")
+log.write("t,phase,mode,fc_roll,fc_pitch,fc_yaw,js_roll,js_pitch,js_yaw,ias,alt,"
+          "ail,ele,rud,thr,st_ail,st_ele,st_thr,st_rud,x,y\n")
+BOXIDS = read_boxids(m)
+_mode_cache = ["DISARMED", 0.0]     # [last mode string, last poll wall-time]
 PARAMS = ["fig_roll_rate", "fig_loop_rate", "fig_assist_z_gain", "fig_assist_vz_gain",
           "fig_assist_max", "ohold_inverted_pitch_trim", "ohold_knife_left_pitch_trim",
           "ohold_knife_right_pitch_trim", "ohold_hover_thr_p", "ohold_hover_thr_i",
@@ -91,8 +106,14 @@ def loop(secs, phase, rc, thr_override=None, print_every=1.0):
         jr, jp, jy = plant.rpy()
         fr, fp, fy = r.att_roll_deg, r.att_pitch_deg, r.att_yaw_deg   # aus der Reply -- keine Extra-Roundtrips
         t = time.time() - T0
-        log.write(f"{t:.2f},{phase},{fr:.1f},{fp:.1f},{fy:.0f},"
-                  f"{jr:.1f},{jp:.1f},{jy:.1f},{plant.ias_kts():.0f},{plant.z:.1f},{ail:.2f},{ele:.2f},{thr:.2f},"
+        if t - _mode_cache[1] > 0.1:             # poll real FC mode at ~10 Hz
+            _mode_cache[0] = fc_mode(m, BOXIDS)
+            _mode_cache[1] = t
+        mode = _mode_cache[0]
+        log.write(f"{t:.2f},{phase},{mode},{fr:.1f},{fp:.1f},{fy:.0f},"
+                  f"{jr:.1f},{jp:.1f},{jy:.1f},{plant.ias_kts():.0f},{plant.z:.1f},"
+                  f"{ail:.2f},{ele:.2f},{rud:.2f},{thr:.2f},"
+                  f"{rc[0]},{rc[1]},{rc[2]},{rc[3]},"
                   f"{plant.xy()[0]:.1f},{plant.xy()[1]:.1f}\n")
         if time.time() - last > print_every:
             print(f"  [{phase:7}] FC {fr:+7.1f}/{fp:+6.1f}/{fy:3.0f} | JS {jr:+7.1f}/{jp:+6.1f}/{jy:5.1f} | "

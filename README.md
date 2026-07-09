@@ -117,8 +117,11 @@ Workflow (SITL.exe running configurator-only, provisioned via
 Each flight runs a short **manual** ANGLE segment (the pilot banks by hand,
 the stick insets move) and then flips the figure switch, so the replay
 shows the handover from manual flying to the orientation-hold sequence.
-The replay overlays the active flight mode, both stick positions, and the
-controller settings read from the FC. `inverted` holds cleanly at ~50 kts
+The replay overlays: the **active flight mode read from the FC itself**
+(`MSP_ACTIVEBOXES` + `MSP_BOXIDS`, not re-derived from the sticks), the
+**pilot stick positions**, the **control-surface commands** the FC drives
+(aileron / elevator / rudder), the controller settings read over MSP, and
+a one-line note on what the maneuver shows. `inverted` holds cleanly at ~50 kts
 with altitude hold; `knife_left`/`hang` enter the attitude but the
 simplified airframe (no fuselage lift) bleeds airspeed -- tuning pending.
 
