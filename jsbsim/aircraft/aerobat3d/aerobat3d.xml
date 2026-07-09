@@ -4,7 +4,8 @@
   bench. Written from scratch for this project (GPL-3.0-or-later, see repo
   LICENSE). Deliberately simple: symmetric airfoil (flies inverted as well as
   upright), oversized control authority, thrust/weight ~1.4 so prop hang is
-  possible. Thrust is a direct thruster (no propeller tables, no torque).
+  possible. Thrust is an idealized external force (throttle -> body-X,
+  constant with airspeed, works at hover; no propeller tables, no torque).
 -->
 <fdm_config name="aerobat3d" version="2.0" release="ALPHA">
   <fileheader>
@@ -55,17 +56,27 @@
     </contact>
   </ground_reactions>
 
-  <propulsion>
-    <engine file="electric900">
+  <!-- Idealized RC thruster: throttle -> body-X force, works at any airspeed
+       including hover (no propeller table, no torque, no turbine spool).
+       5.0 LBS ~ 22 N static => T/W ~ 1.4 on the 1.6 kg airframe. -->
+  <external_reactions>
+    <force name="motor" frame="BODY" unit="LBS">
+      <function>
+        <product>
+          <property> fcs/throttle-cmd-norm </property>
+          <value> 5.0 </value>
+        </product>
+      </function>
       <location unit="M"> <x> 0.35 </x> <y> 0 </y> <z> 0 </z> </location>
-      <thruster file="direct">
-        <location unit="M"> <x> 0.35 </x> <y> 0 </y> <z> 0 </z> </location>
-        <orient unit="DEG"> <pitch> 0 </pitch> <roll> 0 </roll> <yaw> 0 </yaw> </orient>
-      </thruster>
-    </engine>
-  </propulsion>
+      <direction> <x> 1 </x> <y> 0 </y> <z> 0 </z> </direction>
+    </force>
+  </external_reactions>
 
   <flight_control name="FCS">
+    <!-- With no propulsion engine, JSBSim does not auto-create the throttle
+         command property; declare it so the plant can set it and the motor
+         external force can read it. -->
+    <property value="0.0"> fcs/throttle-cmd-norm </property>
     <channel name="Roll">
       <aerosurface_scale name="aileron">
         <input>fcs/aileron-cmd-norm</input>
@@ -86,13 +97,6 @@
         <range> <min>-1</min> <max>1</max> </range>
         <output>fcs/rudder-pos-norm</output>
       </aerosurface_scale>
-    </channel>
-    <channel name="Throttle">
-      <pure_gain name="throttle">
-        <input>fcs/throttle-cmd-norm</input>
-        <gain>1.0</gain>
-        <output>fcs/throttle-pos-norm</output>
-      </pure_gain>
     </channel>
   </flight_control>
 

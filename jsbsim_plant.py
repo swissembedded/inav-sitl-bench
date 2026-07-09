@@ -44,7 +44,8 @@ class JSBSimPlant:
         f["ic/h-sl-ft"] = alt_ft
         f["ic/vc-kts"] = kts
         f["ic/gamma-deg"] = 0
-        f["propulsion/set-running"] = -1     # engines running at IC
+        # thrust is an external_reactions force driven by throttle-pos-norm;
+        # no engine to "set running". run_ic() creates fcs/throttle-cmd-norm.
         f.run_ic()
         self._v_prev = self._v_earth()
         self._a_earth = (0.0, 0.0, 0.0)

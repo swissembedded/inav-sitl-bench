@@ -1,3 +1,10 @@
 fcdata/
 scenario_log.csv
 __pycache__/
+
+# JSBSim run artifacts (intermediate); good videos live in docs/videos/
+jsbsim_log_*.csv
+jsbsim_params_*.txt
+/jsbsim_*.mp4
+hover_log.csv
+sequence_log.csv

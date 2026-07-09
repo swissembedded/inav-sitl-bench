@@ -103,14 +103,24 @@ deliberately lacks.
 The default aircraft is `jsbsim/aircraft/aerobat3d`, a generic 1.5 m /
 1.6 kg RC 3D aerobat written for this project: symmetric airfoil (flies
 inverted as well as upright), oversized control surfaces, thrust/weight
-~1.4 (prop hang possible), direct thruster (no propeller torque yet).
+~1.4 (prop hang possible). Thrust is an idealized `external_reactions`
+force (throttle -> body-X, constant with airspeed so it also holds a
+hover); no propeller model, no torque yet.
 
 Workflow (SITL.exe running configurator-only, provisioned via
 `bench.py provision`):
 
-    python jsbsim_fly.py --flip-ele <inverted|knife_left|knife_right|hang>
-    python animate_jsbsim.py <maneuver>     # 3D replay video (mp4)
+    python jsbsim_fly.py --flip-ele <inverted|knife_left|knife_right|hang|roll_hold|floor_dive>
+    python animate_jsbsim.py <maneuver>     # 3D replay video -> docs/videos/jsbsim_<maneuver>.mp4
     python plot_jsbsim.py                   # static 4-panel figure
+
+Each flight runs a short **manual** ANGLE segment (the pilot banks by hand,
+the stick insets move) and then flips the figure switch, so the replay
+shows the handover from manual flying to the orientation-hold sequence.
+The replay overlays the active flight mode, both stick positions, and the
+controller settings read from the FC. `inverted` holds cleanly at ~50 kts
+with altitude hold; `knife_left`/`hang` enter the attitude but the
+simplified airframe (no fuselage lift) bleeds airspeed -- tuning pending.
 
 `--flip-ele` maps INAV's stabilized pitch onto JSBSim's inverted
 elevator-cmd convention. Each flight logs `jsbsim_log_<maneuver>.csv`

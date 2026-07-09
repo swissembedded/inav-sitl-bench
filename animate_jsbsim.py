@@ -25,7 +25,9 @@ matplotlib.rcParams['animation.ffmpeg_path'] = imageio_ffmpeg.get_ffmpeg_exe()
 
 import sys
 MAN = sys.argv[1] if len(sys.argv) > 1 else "inverted"
-rows = list(csv.DictReader(open(f"jsbsim_log_{MAN}.csv")))
+_all = list(csv.DictReader(open(f"jsbsim_log_{MAN}.csv")))
+_i0 = next((i for i, r in enumerate(_all) if r["phase"] in ("level", "manual")), 0)
+rows = _all[_i0:]
 STEP = 10                      # downsample
 rows = rows[::STEP]
 t   = [float(r["t"]) for r in rows]
@@ -66,8 +68,18 @@ ax2 = fig.add_subplot(gs[2])
 ax2.plot(t, [math.degrees(r[0]) for r in rpy], "#d62728", lw=1.4, label="roll")
 ax2.plot(t, [math.degrees(r[1]) for r in rpy], "#1f77b4", lw=1.4, label="pitch")
 ax2.axhline(180, color="gray", ls=":", lw=0.8); ax2.axhline(-180, color="gray", ls=":", lw=0.8)
-inv = [tt for tt, p in zip(t, ph) if p == "invert"]
-if inv: ax2.axvspan(inv[0], inv[-1], color="#d62728", alpha=0.08)
+PREP = ("settle", "cal", "armL", "armH", "level")
+man_t = [tt for tt, p in zip(t, ph) if p == "manual"]
+seq_t = [tt for tt, p in zip(t, ph) if p not in PREP and p != "manual"]
+if man_t:
+    ax2.axvspan(man_t[0], man_t[-1], color="0.5", alpha=0.10)
+    ax2.text(0.5 * (man_t[0] + man_t[-1]), ax2.get_ylim()[1] * 0.9, "manual",
+             ha="center", fontsize=8, color="0.35")
+if seq_t:
+    ax2.axvspan(seq_t[0], seq_t[-1], color="#d62728", alpha=0.08)
+    ax2.axvline(seq_t[0], color="k", ls="--", lw=1.0)
+    ax2.text(0.5 * (seq_t[0] + seq_t[-1]), ax2.get_ylim()[1] * 0.9, "sequence",
+             ha="center", fontsize=8, color="#d62728")
 ax2b = ax2.twinx()
 ax2b.plot(t, ias, "#9467bd", lw=1.2, label="IAS")
 ax2b.plot(t, z, "#2ca02c", lw=1.2, label="alt")
@@ -114,5 +126,7 @@ def frame(i):
     return seg_lines + [trail, txt, mtxt, marker, dotL, dotR]
 
 anim = FuncAnimation(fig, frame, frames=len(rows), interval=60, blit=False)
-anim.save(f"jsbsim_{MAN}.mp4", writer=FFMpegWriter(fps=10, bitrate=1800), dpi=100)
-print(f"written jsbsim_{MAN}.mp4,", len(rows), "frames")
+outdir = "docs/videos"; os.makedirs(outdir, exist_ok=True)
+outpath = f"{outdir}/jsbsim_{MAN}.mp4"
+anim.save(outpath, writer=FFMpegWriter(fps=10, bitrate=1800), dpi=100)
+print("written", outpath, len(rows), "frames")
