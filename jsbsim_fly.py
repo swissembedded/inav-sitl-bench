@@ -28,8 +28,20 @@ FLIP_RUD = "--flip-rud" in sys.argv
 
 RC_LOW, RC_MID, RC_HIGH = 1000, 1500, 2000
 # channels: A E T R ARM ANGLE INVERT SELECT  (bench provisioning layout)
-def rc_ch(thr=RC_LOW, arm=RC_LOW, angle=RC_LOW, invert=RC_LOW, sel=RC_LOW):
-    return [RC_MID, RC_MID, thr, RC_MID, arm, angle, invert, sel]
+def rc_ch(thr=RC_LOW, arm=RC_LOW, angle=RC_LOW, invert=RC_LOW, sel=RC_LOW, ele=RC_MID):
+    return [RC_MID, ele, thr, RC_MID, arm, angle, invert, sel]
+
+def mode_of(rc):
+    if rc[5] > 1700: base = "ANGLE"
+    elif rc[6] > 1700: base = "INVERT"
+    elif 1450 < rc[6] < 1700: base = "F ROLL"
+    elif 1150 < rc[6] < 1450: base = "FLOOR"
+    elif 1150 < rc[7] < 1450: base = "KNIFE L"
+    elif 1450 < rc[7] < 1750: base = "KNIFE R"
+    elif rc[7] >= 1750: base = "P-HANG"
+    else: base = "ACRO"
+    if base != "FLOOR" and 1150 < rc[6] < 1450: base += "+FLOOR"
+    return base
 
 FLAG_ARMED = 1 << 2
 FLAG_CAL = 1 << 9
@@ -110,10 +122,17 @@ MAN_RC = {
     "knife_left":  dict(sel=1300),
     "knife_right": dict(sel=1600),
     "hang":        dict(sel=1900),
+    "roll_hold":   dict(invert=1575),
+    "floor_dive":  dict(angle=RC_HIGH, invert=1300),
 }[MAN]
 thrM = 1500 if MAN == "hang" else 1700   # hang: Stick mitte -> hover throttle owns
 print(f"=== MANOEUVRE {MAN} ===")
-loop(16, "invert", rc_ch(thr=thrM, arm=RC_HIGH, angle=RC_LOW, **MAN_RC), print_every=0.7)
+if MAN == "floor_dive":
+    loop(4, "arm-floor", rc_ch(thr=1700, arm=RC_HIGH, **MAN_RC), print_every=1)
+    loop(7, "dive", rc_ch(thr=1700, arm=RC_HIGH, ele=1100, **MAN_RC), print_every=0.7)
+    loop(12, "recover", rc_ch(thr=1700, arm=RC_HIGH, **MAN_RC), print_every=0.7)
+else:
+    loop(16, "invert", rc_ch(thr=thrM, arm=RC_HIGH, angle=RC_LOW, **MAN_RC), print_every=0.7)
 
 fr, fp, fy = fc_att(m); jr, jp, jy = plant.rpy()
 print(f"FINAL: FC roll {fr:+.1f}  JS roll {jr:+.1f}  (Erfolg wenn |roll| ~ 180)")
