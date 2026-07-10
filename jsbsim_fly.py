@@ -190,7 +190,7 @@ print("ARMED:", bool(arming_flags(m) & FLAG_ARMED), f"flags=0x{arming_flags(m):X
 # released from the frozen IC only now: level + settle for a few seconds so
 # the whole loop (plant, AHRS, controller) is in steady state before testing
 print("=== ANGLE LEVEL (einschwingen aus sauberer Initialbedingung) ===")
-loop(20, "level", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH))  # epv must converge below max_eph_epv after first arm before figures   # 1450 = level trim (~50 kts, 0 m/min)
+loop(6, "level", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH))   # 1450 = level trim (~50 kts, 0 m/min)
 
 MAN = next((a for a in sys.argv[1:] if not a.startswith("--")), "inverted")
 MAN_RC = {   # SEL detents: 1270 INVERT / 1510 KN L / 1750 KN R / 1985 HANG
@@ -229,6 +229,14 @@ elif MAN == "floor_dive":
     # the floor plane (climb high enough first, then keep pushing well past it)
     loop(8, "climb2", rc_ch(thr=1900, arm=RC_HIGH, ele=1800, **MAN_RC), print_every=1)
     loop(13, "dive-nofloor", rc_ch(thr=1700, arm=RC_HIGH, ele=1150, angle=RC_HIGH), print_every=0.7)
+elif MAN == "hang":
+    loop(6, "hang", rc_ch(thr=thrM, arm=RC_HIGH, angle=RC_LOW, **MAN_RC), print_every=0.7)
+    plant.set_wind(down_ms=3.0)
+    loop(4, "gust", rc_ch(thr=thrM, arm=RC_HIGH, angle=RC_LOW, **MAN_RC), print_every=0.7)
+    plant.set_wind()
+    loop(8, "hang", rc_ch(thr=thrM, arm=RC_HIGH, angle=RC_LOW, **MAN_RC), print_every=0.7)
+    # exit transition: drop the target, ANGLE catches it back to level flight
+    loop(8, "exit", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
 else:
     # hold with a disturbance: 4 s downdraft gust mid-hold -- the honest
     # proof of regulation is the visible actuator response and the altitude

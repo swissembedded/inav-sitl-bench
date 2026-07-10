@@ -175,15 +175,15 @@ import os
 # controller settings (static), top of the column
 if os.path.exists(f"jsbsim_params_{MAN}.txt"):
     ptext = "controller settings:" + chr(10) + open(f"jsbsim_params_{MAN}.txt").read()
-    fig.text(0.735, 0.90, ptext, fontsize=6.5, family="monospace", va="top",
+    fig.text(0.735, 0.90, ptext, fontsize=7.5, family="monospace", va="top",
              bbox=dict(boxstyle="round", fc="0.95", ec="0.7"))
 # controller IN: pilot stick commands (the setpoints the human gives)
 fig.text(0.735, 0.60, "controller IN: pilot sticks", fontsize=7.5, fontweight="bold")
-axL = fig.add_axes([0.74, 0.46, 0.09, 0.10]); axR = fig.add_axes([0.87, 0.46, 0.09, 0.10])
+axL = fig.add_axes([0.74, 0.45, 0.10, 0.11]); axR = fig.add_axes([0.86, 0.45, 0.10, 0.11])
 for a_ in (axL, axR):
     a_.set_xlim(-1.2, 1.2); a_.set_ylim(-1.2, 1.2); a_.set_xticks([]); a_.set_yticks([])
     a_.axhline(0, color="0.85", lw=0.7); a_.axvline(0, color="0.85", lw=0.7)
-axL.set_title("thr/rud", fontsize=7); axR.set_title("ail/ele", fontsize=7)
+axL.set_title("thr/rud", fontsize=8); axR.set_title("ail/ele", fontsize=8)
 dotL, = axL.plot([0], [0], "o", ms=7, color="#1f77b4")
 dotR, = axR.plot([0], [0], "o", ms=7, color="#1f77b4")
 # controller OUT: what the FC drives onto the actuators (surfaces + throttle)
@@ -191,19 +191,19 @@ dotR, = axR.plot([0], [0], "o", ms=7, color="#1f77b4")
 fig.text(0.735, 0.40, "switches", fontsize=7.5, fontweight="bold")
 axSw = fig.add_axes([0.74, 0.28, 0.22, 0.11])
 axSw.set_xlim(-0.5, 3.5); axSw.set_ylim(-1.4, 1.4)
-axSw.set_xticks([0, 1, 2, 3]); axSw.set_xticklabels(["ARM", "ANGLE", "FLOOR", "SEL"], fontsize=7)
+axSw.set_xticks([0, 1, 2, 3]); axSw.set_xticklabels(["ARM", "ANGLE", "FLOOR", "SEL"], fontsize=8)
 axSw.set_yticks([])
 axSw.set_xlim(-0.5, 4.6)
 for xx in range(4):
     axSw.plot([xx, xx], [-1, 1], color="0.8", lw=3, solid_capstyle="round")
 # detent labels: FLOOR channel (F ROLL mid / FLOOR high) + SEL attitude targets
 for yy, lbl in ((0.15, "F ROLL"), (0.8, "FLOOR")):
-    axSw.text(2.18, yy, lbl, fontsize=5.5, va="center", color="0.35")
+    axSw.text(2.18, yy, lbl, fontsize=7, va="center", color="0.35")
 for yy, lbl in ((-0.46, "INV"), (0.02, "KN L"), (0.5, "KN R"), (0.97, "HANG")):
-    axSw.text(3.18, yy, lbl, fontsize=5.5, va="center", color="0.35")
+    axSw.text(3.18, yy, lbl, fontsize=7, va="center", color="0.35")
 levers, = axSw.plot([0, 1, 2, 3], [-1, -1, -1, -1], "s", ms=8, color="#d62728")
 fig.text(0.735, 0.245, "controller OUT: FC commands", fontsize=7.5, fontweight="bold")
-axS = fig.add_axes([0.80, 0.10, 0.16, 0.11])
+axS = fig.add_axes([0.74, 0.10, 0.22, 0.11])
 axS.set_xlim(-1.1, 1.1); axS.set_ylim(-0.6, 3.6)
 axS.set_yticks([0, 1, 2, 3])
 axS.set_yticklabels(["throttle", "rudder", "elevator", "aileron"], fontsize=7)
