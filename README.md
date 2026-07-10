@@ -105,10 +105,12 @@ The default aircraft is `jsbsim/aircraft/aerobat3d`, a generic 1.5 m /
 inverted as well as upright), oversized control surfaces, thrust/weight
 ~1.4 (prop hang possible). Thrust is an idealized `external_reactions`
 force (throttle -> body-X, constant with airspeed so it also holds a
-hover); no propeller model, no torque yet.
+hover), with thrust-proportional prop-wash elevator/rudder authority and a
+stalling CL table; no propeller torque yet.
 
-Workflow (SITL.exe running configurator-only, provisioned via
-`bench.py provision`):
+Workflow (Linux container SITL only -- the cygwin SITL.exe is capped at
+~64 Hz by the Windows 15.6 ms timer tick and breaks the 1 kHz coupling;
+provision via `bench.py provision`):
 
     python jsbsim_fly.py --flip-ele <inverted|knife_left|knife_right|hang|roll_hold|floor_dive|flat_spin>
     python animate_jsbsim.py <maneuver>     # 3D replay video -> docs/videos/jsbsim_<maneuver>.mp4
@@ -121,9 +123,10 @@ The replay overlays: the **active flight mode read from the FC itself**
 (`MSP_ACTIVEBOXES` + `MSP_BOXIDS`, not re-derived from the sticks), the
 **pilot stick positions**, the **control-surface commands** the FC drives
 (aileron / elevator / rudder), the controller settings read over MSP, and
-a one-line note on what the maneuver shows. `inverted` holds cleanly at ~50 kts
-with altitude hold; `knife_left`/`hang` enter the attitude but the
-simplified airframe (no fuselage lift) bleeds airspeed -- tuning pending.
+a one-line note on what the maneuver shows. Over a 22 s figure the holds
+keep altitude within a few meters: roll_hold 1.2 m, inverted 4.8 m, hang
+vertical at 70% throttle 5.2 m, knife L/R 5.8 m (slightly sinking, never
+climbing); the flat spin recovers within ~3 s of flipping ANGLE back on.
 
 `--flip-ele` maps INAV's stabilized pitch onto JSBSim's inverted
 elevator-cmd convention. Each flight logs `jsbsim_log_<maneuver>.csv`
