@@ -86,7 +86,7 @@ def R_ned(roll, pitch, yaw):
     Rx = np.array([[1, 0, 0], [0, cr, -sr], [0, sr, cr]])
     return Rz @ Ry @ Rx
 
-S = 60.0   # aircraft symbol scale [m]
+S = 35.0   # aircraft symbol scale [m]
 SEGS = [((-0.6, 0, 0), (1.0, 0, 0)),          # fuselage
         ((0.1, -1.0, 0), (0.1, 1.0, 0)),      # wing
         ((-0.6, -0.35, 0), (-0.6, 0.35, 0)),  # tailplane
@@ -161,11 +161,11 @@ marker = axRoll.axvline(t[0], color="k", lw=1.5)
 markerP = axPit.axvline(t[0], color="k", lw=1.5)
 markerO = axOut.axvline(t[0], color="k", lw=1.5)
 ax.set_xlabel("east [m]"); ax.set_ylabel("north [m]"); ax.set_zlabel("alt [m]")
-ax.set_xlim(min(y)-100, max(y)+100); ax.set_ylim(min(x)-100, max(x)+100)
-ax.set_zlim(min(z)-50, max(z)+50)
-# isotropic scaling: box proportions = data ranges, so the aircraft symbol
-# keeps its shape (otherwise a long track squashes x/y and the fin looks huge)
-ax.set_box_aspect((max(y)-min(y)+200, max(x)-min(x)+200, max(z)-min(z)+100))
+# chase camera: fixed-size isotropic cube around the aircraft, so the 3D box
+# is the same size in every video regardless of track length (a 2 km
+# floor-dive run otherwise squashes the view into an unreadable sliver)
+W = 150.0
+ax.set_box_aspect((1, 1, 1))
 trail, = ax.plot([], [], [], color="0.6", lw=1.2)
 seg_lines = [ax.plot([], [], [], lw=2.5)[0] for _ in SEGS]
 txt = ax.text2D(0.02, 0.95, "", transform=ax.transAxes, fontsize=10)
@@ -233,6 +233,7 @@ def frame(i):
         ln.set_3d_properties([z[i]-pa[2], z[i]-pb[2]])
         ln.set_color(c)
     trail.set_data(y[:i+1], x[:i+1]); trail.set_3d_properties(z[:i+1])
+    ax.set_xlim(y[i]-W, y[i]+W); ax.set_ylim(x[i]-W, x[i]+W); ax.set_zlim(z[i]-W, z[i]+W)
     txt.set_text(f"t={t[i]:5.1f}s  {ph[i].upper():7s}  roll={math.degrees(rpy[i][0]):+6.0f} deg  alt={z[i]:4.0f} m")
     marker.set_xdata([t[i], t[i]])
     markerP.set_xdata([t[i], t[i]])
