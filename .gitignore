@@ -8,3 +8,4 @@ jsbsim_params_*.txt
 /jsbsim_*.mp4
 hover_log.csv
 sequence_log.csv
+scratch_*.png
