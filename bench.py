@@ -100,14 +100,27 @@ def provision():
     msp.set_servo_mixer_rule(3, 3, 62)  # servo 3 <- TVC pitch (thrust vectoring)
     msp.set_mode_range(0, PERM_ARM, CH_ARM - 4, 1700, 2100)
     msp.set_mode_range(1, PERM_ANGLE, CH_ANGLE - 4, 1700, 2100)
-    msp.set_mode_range(2, PERM_INVERTED, CH_INVERTED - 4, 1700, 2100)
-    msp.set_mode_range(3, PERM_KNIFELEFT, CH_SELECT - 4, 1150, 1450)
-    msp.set_mode_range(4, PERM_KNIFERIGHT, CH_SELECT - 4, 1450, 1750)
-    msp.set_mode_range(5, PERM_PROPHANG, CH_SELECT - 4, 1750, 2100)
-    msp.set_mode_range(6, PERM_ALTFLOOR, CH_INVERTED - 4, 1150, 1450)
+    # SEL = attitude-target selector (off / INVERT / KNIFE L / KNIFE R / HANG),
+    # so the FLOOR gets its own switch travel and combines with ANY attitude
+    msp.set_mode_range(2, PERM_INVERTED, CH_SELECT - 4, 1150, 1390)
+    msp.set_mode_range(3, PERM_KNIFELEFT, CH_SELECT - 4, 1390, 1630)
+    msp.set_mode_range(4, PERM_KNIFERIGHT, CH_SELECT - 4, 1630, 1870)
+    msp.set_mode_range(5, PERM_PROPHANG, CH_SELECT - 4, 1870, 2100)
+    msp.set_mode_range(6, PERM_ALTFLOOR, CH_INVERTED - 4, 1700, 2100)
     msp.set_mode_range(7, PERM_FIGROLL, CH_INVERTED - 4, 1450, 1700)
     msp.set_mode_range(8, PERM_FIGLOOP, CH_ANGLE - 4, 1150, 1450)
     msp.set_mode_range(9, PERM_FIGSEQ, CH_ANGLE - 4, 1450, 1700)
+    # tuned against the JSBSim aerobat3d plant (2026-07-10): altitude spans
+    # over a 22 s figure: inverted 3.1 m, roll_hold 1.1 m, knife L/R 6 m
+    # (slightly sinking, never climbing)
+    msp.set_setting("fig_assist_z_gain", struct.pack("<B", 45))
+    msp.set_setting("fig_assist_vz_gain", struct.pack("<B", 3))
+    msp.set_setting("fig_assist_max", struct.pack("<B", 20))
+    msp.set_setting("ohold_knife_left_pitch_trim", struct.pack("<b", 7))
+    msp.set_setting("ohold_knife_right_pitch_trim", struct.pack("<b", 7))
+    # BARO_ONLY: aerobatic attitudes lose GPS; stand-in for the planned
+    # lock-quality-gated auto switch (GPS only weighted in when locked)
+    msp.set_setting("inav_default_alt_sensor", struct.pack("<B", 3))
     msp.save_eeprom()
     print("provisioned + saved, SITL reboots now")
 

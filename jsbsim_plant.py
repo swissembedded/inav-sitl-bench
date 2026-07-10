@@ -28,7 +28,10 @@ G = 9.81
 
 
 class JSBSimPlant:
-    def __init__(self, model="aerobat3d", alt_ft=1500, kts=45, dt=0.01):
+    def __init__(self, model="aerobat3d", alt_ft=394, kts=45, dt=0.01):
+        # 394 ft = 120 m: the legal RC ceiling; start the bench flights there
+        # so replay altitudes look like real-world flying. Pass a higher
+        # alt_ft explicitly for maneuvers that trade away more height.
         import os
         self.fdm = jsbsim.FGFDMExec(None)
         self.fdm.set_debug_level(0)
@@ -44,8 +47,9 @@ class JSBSimPlant:
         f["ic/h-sl-ft"] = alt_ft
         f["ic/vc-kts"] = kts
         f["ic/gamma-deg"] = 0
-        # thrust is an external_reactions force driven by throttle-pos-norm;
-        # no engine to "set running". run_ic() creates fcs/throttle-cmd-norm.
+        # engine models (c172p): start running at IC. For external-force
+        # models (aerobat3d) this just creates an unused property.
+        f["propulsion/set-running"] = -1
         f.run_ic()
         self._v_prev = self._v_earth()
         self._a_earth = (0.0, 0.0, 0.0)
@@ -58,14 +62,21 @@ class JSBSimPlant:
         f["fcs/rudder-cmd-norm"] = max(-1.0, min(1.0, rud))
         f["fcs/throttle-cmd-norm"] = max(0.0, min(1.0, thr01))
 
+    BASE_DT = 0.001   # internal integration step; NEVER integrate coarser
+                      # (40 ms steps blow up numerically -> NaN attitude)
+
     def step(self, dt=None):
-        if dt is not None and abs(dt - self.dt) > 1e-4:
-            self.dt = max(0.004, min(0.05, dt))
-            self.fdm.set_dt(self.dt)
+        # advance sim time by dt using fixed fine substeps, so the coupling
+        # rate (controller loop) is decoupled from the integrator step
+        span = self.dt if dt is None else dt
+        n = max(1, int(round(span / self.BASE_DT)))
+        if abs(self.fdm.get_delta_t() - self.BASE_DT) > 1e-9:
+            self.fdm.set_dt(self.BASE_DT)
         v0 = self._v_earth()
-        self.fdm.run()
+        for _ in range(n):
+            self.fdm.run()
         v1 = self._v_earth()
-        self._a_earth = tuple((b - a) / self.dt for a, b in zip(v0, v1))
+        self._a_earth = tuple((b - a) / (n * self.BASE_DT) for a, b in zip(v0, v1))
         self._v_prev = v1
 
     # --- state ---------------------------------------------------------------
@@ -100,13 +111,31 @@ class JSBSimPlant:
         return ((f["position/lat-gc-deg"] - la0) * 111320.0,
                 (f["position/long-gc-deg"] - lo0) * 111320.0 * _m.cos(_m.radians(la0)))
 
+    def gps(self):
+        """GPS-fix injection so the FC's nav altitude estimate becomes trusted
+        (navIsAltitudeEstimateTrusted) -- the figure altitude assist returns 0
+        without it, so the plane would not hold altitude in the holds."""
+        f = self.fdm
+        vn, ve, vd = (f["velocities/v-north-fps"] * FT2M,
+                      f["velocities/v-east-fps"] * FT2M,
+                      f["velocities/v-down-fps"] * FT2M)
+        return {
+            "lat_e7": int(round(f["position/lat-gc-deg"] * 1e7)),
+            "lon_e7": int(round(f["position/long-gc-deg"] * 1e7)),
+            "alt_cm": int(round(self.z * 100)),
+            "speed_cms": int(round(math.hypot(vn, ve) * 100)),
+            "course_dd": int(round(math.degrees(math.atan2(ve, vn)) % 360.0 * 10)) % 3600,
+            "vel_ned_cms": (int(round(vn * 100)), int(round(ve * 100)), int(round(vd * 100))),
+        }
+
     # --- sensors (bench conventions) -----------------------------------------
     def gyro_dps16(self):
         f = self.fdm
         p = math.degrees(f["velocities/p-rad_sec"])
         qq = math.degrees(f["velocities/q-rad_sec"])
         r = math.degrees(f["velocities/r-rad_sec"])
-        return (int(round(p * 16)), int(round(qq * 16)), int(round(r * 16)))
+        # saturate like the real IMU (int16 = +-2048 deg/s)
+        return tuple(max(-32767, min(32767, int(round(v * 16)))) for v in (p, qq, r))
 
     def acc_mg(self):
         f_earth = (self._a_earth[0] / G,

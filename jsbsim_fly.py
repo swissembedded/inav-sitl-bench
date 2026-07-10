@@ -37,7 +37,13 @@ def rc_ch(thr=RC_LOW, arm=RC_LOW, angle=RC_LOW, invert=RC_LOW, sel=RC_LOW, ele=R
 # ANGLE. permanentId map from src/main/fc/fc_msp_box.c.
 MSP_BOXIDS = 119
 MSP_ACTIVEBOXES = 113
-PERM_NAME = {69: "INVERT", 70: "KNIFE L", 71: "KNIFE R", 72: "P-HANG"}
+MSP_ALTITUDE = 109
+PERM_NAME = {69: "INVERT", 70: "KNIFE L", 71: "KNIFE R", 72: "P-HANG",
+             74: "F ROLL", 75: "F LOOP", 76: "F 4PT", 77: "F SEQ"}
+
+def fc_alt_m(m):
+    p = m.request(MSP_ALTITUDE)          # int32 estimated altitude [cm], ...
+    return struct.unpack("<i", p[:4])[0] / 100.0
 
 def read_boxids(m):
     return list(m.request(MSP_BOXIDS))          # permanentId per active box
@@ -46,14 +52,15 @@ def fc_mode(m, boxids):
     bm = m.request(MSP_ACTIVEBOXES)
     active = {perm for i, perm in enumerate(boxids)
               if (i >> 3) < len(bm) and (bm[i >> 3] >> (i & 7)) & 1}
-    for perm in (69, 70, 71, 72):               # orientation sub-mode first
-        if perm in active:
-            return PERM_NAME[perm]
-    if 1 in active:                             # ANGLE
-        return "ANGLE"
-    if 0 in active:                             # armed, no ANGLE
-        return "ACRO"
-    return "DISARMED"
+    if 27 in active:                            # FAILSAFE overrides everything
+        return "FAILSAFE"
+    base = next((PERM_NAME[p] for p in (69, 70, 71, 72, 74, 75, 76, 77)
+                 if p in active), None)
+    if base is None:
+        base = "ANGLE" if 1 in active else ("ACRO" if 0 in active else "DISARMED")
+    if 73 in active:                            # altitude floor engaged as suffix
+        base += "+FLOOR"
+    return base
 
 FLAG_ARMED = 1 << 2
 FLAG_CAL = 1 << 9
@@ -68,13 +75,21 @@ def fc_att(m):
     return r / 10.0, pi / 10.0, y
 
 m = MspClient()
-plant = JSBSimPlant()
 _man = next((a for a in sys.argv[1:] if not a.startswith("--")), "inverted")
+# default start = 120 m (legal RC ceiling); floor_dive trades ~100 m away,
+# so it alone starts higher to leave room for the catch
+_model = "c172p" if "--c172" in sys.argv else "aerobat3d"
+# 1500 ft for the diagnostic c172 (entry transient), 120 m for everything
+# else -- the altitude floor works relative to the baro zero at start
+plant = JSBSimPlant(model=_model,
+                    alt_ft=1500 if _model == "c172p" else (820 if _man == "flat_spin" else 394))
 log = open(f"jsbsim_log_{_man}.csv", "w")
 log.write("t,phase,mode,fc_roll,fc_pitch,fc_yaw,js_roll,js_pitch,js_yaw,ias,alt,"
-          "ail,ele,rud,thr,st_ail,st_ele,st_thr,st_rud,x,y\n")
+          "ail,ele,rud,thr,fc_thr,st_ail,st_ele,st_thr,st_rud,"
+          "st_arm,st_angle,st_inv,st_sel,fc_alt,x,y\n")
 BOXIDS = read_boxids(m)
 _mode_cache = ["DISARMED", 0.0]     # [last mode string, last poll wall-time]
+_alt_cache = [0.0]                  # last FC-measured altitude
 PARAMS = ["fig_roll_rate", "fig_loop_rate", "fig_assist_z_gain", "fig_assist_vz_gain",
           "fig_assist_max", "ohold_inverted_pitch_trim", "ohold_knife_left_pitch_trim",
           "ohold_knife_right_pitch_trim", "ohold_hover_thr_p", "ohold_hover_thr_i",
@@ -83,52 +98,78 @@ with open(f"jsbsim_params_{_man}.txt", "w") as pf:
     for name in PARAMS:
         try:
             raw = m.request(0x1003, name.encode() + bytes([0]))
-            pf.write(f"{name}={int.from_bytes(raw, 'little', signed=True)}" + chr(10))
+            pf.write(f"{name}={int.from_bytes(raw, 'little')}" + chr(10))
         except Exception:
             pass
 T0 = time.time()
 
-def loop(secs, phase, rc, thr_override=None, print_every=1.0):
+# Fixed-timestep coupling: the plant advances exactly DT per cycle and the
+# loop WAITS out the remainder of the slot, so plant time == wall time ==
+# the FC's own clock without jitter feeding the AHRS. 1 kHz coupling --
+# requires the Linux container SITL (~0.5 ms MSP roundtrip); the Windows
+# cygwin SITL.exe is capped at ~64 Hz by the 15.6 ms timer tick.
+DT = 0.001
+_late = [0]        # slots we failed to hold (diagnostic)
+_prof = {"msp": 0.0, "js": 0.0, "n": 0}
+
+def loop(secs, phase, rc, thr_override=None, print_every=1.0, freeze=False):
+    """freeze=True: hold the plant motionless (clean static IC while the FC
+    settles/calibrates/arms disarmed) -- sensors still stream."""
     last = 0.0
     t0 = time.time()
-    it_prev = time.perf_counter()
     while time.time() - t0 < secs:
         it0 = time.perf_counter()
+        # NOTE: no GPS injection for now. Injecting our GPS (even only while
+        # upright) biases the AHRS pitch via the COG/vel fusion -- revisit
+        # together with the lock-quality-gated altitude-source feature.
         r = sim_step(m, plant.acc_mg(), plant.gyro_dps16(), rc, baro_pa=plant.baro_pa())
+        t_msp = time.perf_counter()
         ail = -r.stab_roll if FLIP_AIL else r.stab_roll
         ele = -r.stab_pitch if FLIP_ELE else r.stab_pitch
         rud = -r.stab_yaw if FLIP_RUD else r.stab_yaw
         thr = thr_override if thr_override is not None else (r.stab_throttle + 1.0) / 2.0
-        plant.set_controls(ail, ele, rud, thr)
-        now = time.perf_counter()
-        plant.step(dt=now - it_prev)      # sim time == real time, adaptively
-        it_prev = now
+        if freeze:
+            plant._a_earth = (0.0, 0.0, 0.0)   # static: pure gravity, zero rates
+        else:
+            plant.set_controls(ail, ele, rud, thr)
+            plant.step(dt=DT)                  # fixed step, paced below
+        t_js = time.perf_counter()
+        _prof["msp"] += t_msp - it0; _prof["js"] += t_js - t_msp; _prof["n"] += 1
         jr, jp, jy = plant.rpy()
         fr, fp, fy = r.att_roll_deg, r.att_pitch_deg, r.att_yaw_deg   # aus der Reply -- keine Extra-Roundtrips
         t = time.time() - T0
-        if t - _mode_cache[1] > 0.1:             # poll real FC mode at ~10 Hz
+        if t - _mode_cache[1] > 0.1:             # poll real FC mode + baro alt at ~10 Hz
             _mode_cache[0] = fc_mode(m, BOXIDS)
+            _alt_cache[0] = fc_alt_m(m)
             _mode_cache[1] = t
         mode = _mode_cache[0]
+        fc_thr = (r.stab_throttle + 1.0) / 2.0   # FC's own throttle output, even when overridden
         log.write(f"{t:.2f},{phase},{mode},{fr:.1f},{fp:.1f},{fy:.0f},"
                   f"{jr:.1f},{jp:.1f},{jy:.1f},{plant.ias_kts():.0f},{plant.z:.1f},"
-                  f"{ail:.2f},{ele:.2f},{rud:.2f},{thr:.2f},"
-                  f"{rc[0]},{rc[1]},{rc[2]},{rc[3]},"
-                  f"{plant.xy()[0]:.1f},{plant.xy()[1]:.1f}\n")
+                  f"{ail:.2f},{ele:.2f},{rud:.2f},{thr:.2f},{fc_thr:.2f},"
+                  f"{rc[0]},{rc[1]},{rc[2]},{rc[3]},{rc[4]},{rc[5]},{rc[6]},{rc[7]},"
+                  f"{_alt_cache[0]:.1f},{plant.xy()[0]:.1f},{plant.xy()[1]:.1f}\n")
         if time.time() - last > print_every:
             print(f"  [{phase:7}] FC {fr:+7.1f}/{fp:+6.1f}/{fy:3.0f} | JS {jr:+7.1f}/{jp:+6.1f}/{jy:5.1f} | "
                   f"IAS {plant.ias_kts():3.0f} alt {plant.z:5.0f} ele {ele:+.2f}")
             last = time.time()
-        s = 0.01 - (time.perf_counter() - it0)   # cap at ~100 Hz
-        if s > 0:
-            time.sleep(s)
+        # hold the fixed slot: coarse sleep, then spin the last ~2 ms
+        # (Windows sleep granularity would otherwise blow the slot)
+        while True:
+            rem = DT - (time.perf_counter() - it0)
+            if rem <= 0:
+                break
+            if rem > 0.002:
+                time.sleep(rem - 0.002)
+        if -(DT - (time.perf_counter() - it0)) > 0.005:
+            _late[0] += 1                        # slot overran by >5 ms
 
 print("boot-cal abwarten (bench-Routine)...")
 from bench import wait_boot_calibration
 wait_boot_calibration(m)
 
-print("=== SETTLE (AHRS an JSBSim angleichen, disarmed) ===")
-loop(6, "settle", rc_ch())
+print("=== SETTLE (AHRS an JSBSim angleichen, Plant eingefroren) ===")
+loop(6, "settle", rc_ch(), freeze=True)
 fr, fp, fy = fc_att(m); jr, jp, jy = plant.rpy()
 print(f"Konventions-Check: FC {fr:+.1f}/{fp:+.1f} vs JS {jr:+.1f}/{jp:+.1f}  "
       f"({'OK' if abs(fr-jr)<15 and abs(fp-jp)<15 else 'MISMATCH -> Vorzeichen pruefen'})")
@@ -136,29 +177,32 @@ print(f"Konventions-Check: FC {fr:+.1f}/{fp:+.1f} vs JS {jr:+.1f}/{jp:+.1f}  "
 print("=== CAL (HITL-Stream laufen lassen bis bit9 weg) ===")
 t0 = time.time()
 while (arming_flags(m) & FLAG_CAL) and time.time() - t0 < 25:
-    loop(1.0, "cal", rc_ch(angle=RC_HIGH), print_every=4)
+    loop(1.0, "cal", rc_ch(angle=RC_HIGH), print_every=4, freeze=True)
 print("cal fertig, flags=0x%X" % arming_flags(m))
 
 print("=== ARM (Toggle-Zyklen bis ARMED) ===")
 t0 = time.time()
 while not (arming_flags(m) & FLAG_ARMED) and time.time() - t0 < 20:
-    loop(1.0, "armL", rc_ch(thr=RC_LOW, arm=RC_LOW, angle=RC_HIGH), print_every=9)
-    loop(1.2, "armH", rc_ch(thr=RC_LOW, arm=RC_HIGH, angle=RC_HIGH), print_every=9)
+    loop(1.0, "armL", rc_ch(thr=RC_LOW, arm=RC_LOW, angle=RC_HIGH), print_every=9, freeze=True)
+    loop(1.2, "armH", rc_ch(thr=RC_LOW, arm=RC_HIGH, angle=RC_HIGH), print_every=9, freeze=True)
 print("ARMED:", bool(arming_flags(m) & FLAG_ARMED), f"flags=0x{arming_flags(m):X}")
 
-print("=== ANGLE LEVEL (Vorzeichen-Beweis: muss level bleiben) ===")
-loop(6, "level", rc_ch(thr=1700, arm=RC_HIGH, angle=RC_HIGH))
+# released from the frozen IC only now: level + settle for a few seconds so
+# the whole loop (plant, AHRS, controller) is in steady state before testing
+print("=== ANGLE LEVEL (einschwingen aus sauberer Initialbedingung) ===")
+loop(8, "level", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH))   # 1450 = level trim (~50 kts, 0 m/min)
 
 MAN = next((a for a in sys.argv[1:] if not a.startswith("--")), "inverted")
-MAN_RC = {
-    "inverted":    dict(invert=RC_HIGH),
-    "knife_left":  dict(sel=1300),
-    "knife_right": dict(sel=1600),
-    "hang":        dict(sel=1900),
-    "roll_hold":   dict(invert=1575),
-    "floor_dive":  dict(angle=RC_HIGH, invert=1300),
+MAN_RC = {   # SEL detents: 1270 INVERT / 1510 KN L / 1750 KN R / 1985 HANG
+    "inverted":    dict(sel=1270),
+    "knife_left":  dict(sel=1510),
+    "knife_right": dict(sel=1750),
+    "hang":        dict(sel=1985),
+    "roll_hold":   dict(invert=1575),                 # F ROLL band, own switch mid
+    "floor_dive":  dict(angle=RC_HIGH, invert=1900),  # FLOOR switch high
+    "flat_spin":   dict(),                            # pro-spin sticks in ACRO, then ANGLE recovery
 }[MAN]
-thrM = 1500 if MAN == "hang" else 1700   # hang: Stick mitte -> hover throttle owns
+thrM = 1500 if MAN == "hang" else 1650   # level trim; holds start stable (hang: hover PID owns)
 
 # --- MANUAL: pilot flies by hand in ANGLE so the sticks visibly move,
 #     then we flip the figure switch -> the sequence takes over ---
@@ -168,13 +212,30 @@ loop(3, "manual", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH, ail=1750))
 loop(3, "manual", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH))
 
 print(f"=== SEQUENCE {MAN} (Umschalten manuell -> Regler) ===")
-if MAN == "floor_dive":
-    loop(5, "arm-floor", rc_ch(thr=1700, arm=RC_HIGH, **MAN_RC), print_every=1)
-    loop(8, "dive", rc_ch(thr=1700, arm=RC_HIGH, ele=1100, **MAN_RC), print_every=0.7)
-    loop(14, "recover", rc_ch(thr=1700, arm=RC_HIGH, **MAN_RC), print_every=0.7)
+if MAN == "flat_spin":
+    # spin entry in ACRO: idle power, full up-elevator, full rudder -- the
+    # stalled wing autorotates; then flip ANGLE back on: the controller
+    # must catch the spin and level out
+    loop(7, "spin-entry", rc_ch(thr=1000, arm=RC_HIGH, ele=2000, rud=2000), print_every=0.7)
+    loop(12, "recover", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
+elif MAN == "floor_dive":
+    # floor arms only after climbing above floor+margin (30+10 m over the
+    # baro zero); then push over and HOLD the stick -- the floor must catch
+    # and level AGAINST the held down-elevator, not because we let go
+    loop(3, "arm-floor", rc_ch(thr=1700, arm=RC_HIGH, **MAN_RC), print_every=1)
+    loop(8, "climb", rc_ch(thr=1900, arm=RC_HIGH, ele=1800, **MAN_RC), print_every=1)
+    loop(14, "dive-held", rc_ch(thr=1700, arm=RC_HIGH, ele=1150, **MAN_RC), print_every=0.7)
+    # contrast pass: floor switch OFF, same held push -> it punches through
+    # the floor plane (climb high enough first, then keep pushing well past it)
+    loop(8, "climb2", rc_ch(thr=1900, arm=RC_HIGH, ele=1800, **MAN_RC), print_every=1)
+    loop(13, "dive-nofloor", rc_ch(thr=1700, arm=RC_HIGH, ele=1150, angle=RC_HIGH), print_every=0.7)
 else:
     loop(22, MAN, rc_ch(thr=thrM, arm=RC_HIGH, angle=RC_LOW, **MAN_RC), print_every=0.7)
 
 fr, fp, fy = fc_att(m); jr, jp, jy = plant.rpy()
 print(f"FINAL: FC roll {fr:+.1f}  JS roll {jr:+.1f}  (Erfolg wenn |roll| ~ 180)")
+if _prof["n"]:
+    print(f"timing: {_late[0]} slots overran >5ms | per cycle: "
+          f"msp {1000*_prof['msp']/_prof['n']:.1f} ms, jsbsim {1000*_prof['js']/_prof['n']:.1f} ms "
+          f"(slot {DT*1000:.0f} ms)")
 log.close(); m.close()

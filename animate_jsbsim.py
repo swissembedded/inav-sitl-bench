@@ -28,7 +28,10 @@ MAN = sys.argv[1] if len(sys.argv) > 1 else "inverted"
 _all = list(csv.DictReader(open(f"jsbsim_log_{MAN}.csv")))
 _i0 = next((i for i, r in enumerate(_all) if r["phase"] in ("level", "manual")), 0)
 rows = _all[_i0:]
-STEP = 10                      # downsample
+# downsample to ~10 video frames per flight second, whatever the log rate
+_ts = [float(r["t"]) for r in rows[:200]]
+_dt = (_ts[-1] - _ts[0]) / max(1, len(_ts) - 1) if len(_ts) > 1 else 0.1
+STEP = max(1, int(round(0.1 / _dt)))
 rows = rows[::STEP]
 t   = [float(r["t"]) for r in rows]
 x   = [float(r["x"]) for r in rows]      # north
@@ -36,6 +39,20 @@ y   = [float(r["y"]) for r in rows]      # east
 z   = [float(r["alt"]) for r in rows]
 rpy = [(math.radians(float(r["js_roll"])), math.radians(float(r["js_pitch"])),
         math.radians(float(r["js_yaw"]))) for r in rows]
+# truth (JSBSim) vs FC estimate, in degrees -- the validation pair:
+# solid = physical truth (out of the plant), dashed = what the FC believes (in).
+# Roll is UNWRAPPED: +180 and -180 are the same attitude, so a plane sitting
+# inverted would otherwise paint +179/-179 sawtooth "fireworks" instead of a
+# calm line at 180.
+def unwrap_deg(vals):
+    return list(np.degrees(np.unwrap(np.radians(vals))))
+js_roll  = unwrap_deg([float(r["js_roll"])  for r in rows])
+fc_roll  = unwrap_deg([float(r["fc_roll"])  for r in rows])
+# align the FC branch (it may unwrap to 180 vs -180 = same attitude)
+_off = 360.0 * round((np.mean(js_roll) - np.mean(fc_roll)) / 360.0)
+fc_roll = [v + _off for v in fc_roll]
+js_pitch = [float(r["js_pitch"]) for r in rows]
+fc_pitch = [float(r["fc_pitch"]) for r in rows]
 ph  = [r["phase"] for r in rows]
 mode = [r.get("mode", "") for r in rows]
 def stn(k, mid=1500.0, rng=500.0):
@@ -48,7 +65,16 @@ st_rud = stn("st_rud")
 cs_ail = [float(r.get("ail", 0)) for r in rows]
 cs_ele = [float(r.get("ele", 0)) for r in rows]
 cs_rud = [float(r.get("rud", 0)) for r in rows]
+sw = {k: [float(r.get(k, 1000)) for r in rows] for k in ("st_arm","st_angle","st_inv","st_sel")}
+cs_thr = [float(r.get("thr", 0)) for r in rows]        # 0..1 throttle driven into the plant
+fc_thr = [float(r.get("fc_thr", r.get("thr", 0))) for r in rows]  # FC's own throttle output
 ias = [float(r["ias"]) for r in rows]
+fc_alt = [float(r.get("fc_alt", r["alt"])) for r in rows]  # FC baro-estimated altitude
+# baro is referenced to the boot zero (AGL), truth is MSL -- shift the baro
+# trace by the constant start offset so the two overlay: a faithful baro then
+# sits on the truth line and any drift shows up as a gap
+_baro_off = (z[0] - fc_alt[0]) if fc_alt else 0.0
+fc_alt = [v + _baro_off for v in fc_alt]
 COL = {"level": "#1f77b4", "invert": "#d62728"}
 
 def R_ned(roll, pitch, yaw):
@@ -67,69 +93,113 @@ SEGS = [((-0.6, 0, 0), (1.0, 0, 0)),          # fuselage
         ((-0.6, 0, 0), (-0.6, 0, -0.45))]     # fin (up = -z in NED)
 
 fig = plt.figure(figsize=(11, 9))
-# left column: 3D replay (top) + synchronized time strip (bottom).
+# left column: 3D replay (top) + TWO synchronized time graphs (bottom):
+# roll (truth vs FC estimate, unwrapped) and pitch (truth vs FC estimate)
+# with altitude/IAS on the second axis. solid = JSBSim truth, dashed = FC
+# estimate; if the loop is valid they overlap.
 # right column (x >= 0.72) is reserved for the info insets so nothing overlaps.
-ax = fig.add_axes([0.01, 0.40, 0.66, 0.52], projection="3d")
-ax2 = fig.add_axes([0.09, 0.07, 0.56, 0.24])
-ax2.plot(t, [math.degrees(r[0]) for r in rpy], "#d62728", lw=1.4, label="roll")
-ax2.plot(t, [math.degrees(r[1]) for r in rpy], "#1f77b4", lw=1.4, label="pitch")
-ax2.axhline(180, color="gray", ls=":", lw=0.8); ax2.axhline(-180, color="gray", ls=":", lw=0.8)
+ax = fig.add_axes([0.01, 0.44, 0.66, 0.50], projection="3d")
+axRoll = fig.add_axes([0.09, 0.25, 0.56, 0.16])
+axPit  = fig.add_axes([0.09, 0.05, 0.56, 0.16], sharex=axRoll)
+axRoll.plot(t, js_roll, "#d62728", lw=1.4, label="roll truth")
+axRoll.plot(t, fc_roll, "k", lw=1.0, ls="--", label="roll FC est")
+axRoll.axhline(180, color="gray", ls=":", lw=0.8)
+axRoll.axhline(-180, color="gray", ls=":", lw=0.8)
+axRoll.axhline(90, color="gray", ls=":", lw=0.5)
+axRoll.axhline(-90, color="gray", ls=":", lw=0.5)
+axRoll.set_ylabel("roll [deg]")
+axRoll.legend(fontsize=7, loc="upper left")
+axRoll.grid(alpha=0.3)
+plt.setp(axRoll.get_xticklabels(), visible=False)
+axPit.plot(t, js_pitch, "#1f77b4", lw=1.4, label="pitch truth")
+axPit.plot(t, fc_pitch, "k", lw=1.0, ls="--", label="pitch FC est")
+axPit.set_ylabel("pitch [deg]")
+axPit.set_xlabel("t [s]")
+axPit.legend(fontsize=7, loc="upper left")
+axPit.grid(alpha=0.3)
+axPb = axPit.twinx()
+axPb.plot(t, ias, "#9467bd", lw=1.0, label="IAS")
+axPb.plot(t, z, "#2ca02c", lw=1.4, label="alt truth")
+axPb.plot(t, fc_alt, "#2ca02c", lw=1.0, ls="--", label="alt meas (baro)")
+axPb.plot(t, [v * 100 for v in fc_thr], "#ff7f0e", lw=1.0, label="thrust [%]")
+axPb.set_ylabel("IAS [kts] / alt [m] / thr [%]", fontsize=8)
+axPb.legend(fontsize=7, loc="upper right")
 PREP = ("settle", "cal", "armL", "armH", "level")
 man_t = [tt for tt, p in zip(t, ph) if p == "manual"]
 seq_t = [tt for tt, p in zip(t, ph) if p not in PREP and p != "manual"]
+for a_ in (axRoll, axPit):
+    if man_t:
+        a_.axvspan(man_t[0], man_t[-1], color="0.5", alpha=0.10)
+    if seq_t:
+        a_.axvspan(seq_t[0], seq_t[-1], color="#d62728", alpha=0.08)
+        a_.axvline(seq_t[0], color="k", ls="--", lw=1.0)
 if man_t:
-    ax2.axvspan(man_t[0], man_t[-1], color="0.5", alpha=0.10)
-    ax2.text(0.5 * (man_t[0] + man_t[-1]), ax2.get_ylim()[1] * 0.9, "manual",
-             ha="center", fontsize=8, color="0.35")
+    axRoll.text(0.5 * (man_t[0] + man_t[-1]), axRoll.get_ylim()[1] * 0.9, "manual",
+                ha="center", fontsize=8, color="0.35")
 if seq_t:
-    ax2.axvspan(seq_t[0], seq_t[-1], color="#d62728", alpha=0.08)
-    ax2.axvline(seq_t[0], color="k", ls="--", lw=1.0)
-    ax2.text(0.5 * (seq_t[0] + seq_t[-1]), ax2.get_ylim()[1] * 0.9, "sequence",
-             ha="center", fontsize=8, color="#d62728")
-ax2b = ax2.twinx()
-ax2b.plot(t, ias, "#9467bd", lw=1.2, label="IAS")
-ax2b.plot(t, z, "#2ca02c", lw=1.2, label="alt")
-ax2b.set_ylabel("IAS [kts] / alt [m]")
-ax2b.legend(fontsize=8, loc="upper right")
-marker = ax2.axvline(t[0], color="k", lw=1.5)
-ax2.set_xlabel("t [s]"); ax2.set_ylabel("deg"); ax2.legend(fontsize=8, loc="upper left"); ax2.grid(alpha=0.3)
+    axRoll.text(0.5 * (seq_t[0] + seq_t[-1]), axRoll.get_ylim()[1] * 0.9, "sequence",
+                ha="center", fontsize=8, color="#d62728")
+marker = axRoll.axvline(t[0], color="k", lw=1.5)
+markerP = axPit.axvline(t[0], color="k", lw=1.5)
 ax.set_xlabel("east [m]"); ax.set_ylabel("north [m]"); ax.set_zlabel("alt [m]")
 ax.set_xlim(min(y)-100, max(y)+100); ax.set_ylim(min(x)-100, max(x)+100)
 ax.set_zlim(min(z)-50, max(z)+50)
+# isotropic scaling: box proportions = data ranges, so the aircraft symbol
+# keeps its shape (otherwise a long track squashes x/y and the fin looks huge)
+ax.set_box_aspect((max(y)-min(y)+200, max(x)-min(x)+200, max(z)-min(z)+100))
 trail, = ax.plot([], [], [], color="0.6", lw=1.2)
 seg_lines = [ax.plot([], [], [], lw=2.5)[0] for _ in SEGS]
 txt = ax.text2D(0.02, 0.95, "", transform=ax.transAxes, fontsize=10)
 mtxt = ax.text2D(0.02, 0.88, "", transform=ax.transAxes, fontsize=14, fontweight="bold", color="#d62728")
-# --- right column of insets (x >= 0.72), stacked top -> bottom ---
+# --- right column of insets (x >= 0.72), stacked top -> bottom, no overlap ---
 import os
+# controller settings (static), top of the column
 if os.path.exists(f"jsbsim_params_{MAN}.txt"):
     ptext = "controller settings:" + chr(10) + open(f"jsbsim_params_{MAN}.txt").read()
-    fig.text(0.72, 0.90, ptext, fontsize=7, family="monospace", va="top",
+    fig.text(0.735, 0.90, ptext, fontsize=6.5, family="monospace", va="top",
              bbox=dict(boxstyle="round", fc="0.95", ec="0.7"))
-# pilot stick inputs (what the human commands)
-axL = fig.add_axes([0.74, 0.50, 0.09, 0.10]); axR = fig.add_axes([0.87, 0.50, 0.09, 0.10])
+# controller IN: pilot stick commands (the setpoints the human gives)
+fig.text(0.735, 0.60, "controller IN: pilot sticks", fontsize=7.5, fontweight="bold")
+axL = fig.add_axes([0.74, 0.46, 0.09, 0.10]); axR = fig.add_axes([0.87, 0.46, 0.09, 0.10])
 for a_ in (axL, axR):
     a_.set_xlim(-1.2, 1.2); a_.set_ylim(-1.2, 1.2); a_.set_xticks([]); a_.set_yticks([])
     a_.axhline(0, color="0.85", lw=0.7); a_.axvline(0, color="0.85", lw=0.7)
-axL.set_title("pilot thr/rud", fontsize=7); axR.set_title("pilot ail/ele", fontsize=7)
+axL.set_title("thr/rud", fontsize=7); axR.set_title("ail/ele", fontsize=7)
 dotL, = axL.plot([0], [0], "o", ms=7, color="#1f77b4")
 dotR, = axR.plot([0], [0], "o", ms=7, color="#1f77b4")
-# control-surface commands the FC drives (aileron / elevator / rudder)
-axS = fig.add_axes([0.74, 0.34, 0.22, 0.10])
-axS.set_xlim(-1.1, 1.1); axS.set_ylim(-0.6, 2.6)
-axS.set_yticks([0, 1, 2]); axS.set_yticklabels(["rudder", "elevator", "aileron"], fontsize=7)
-axS.set_xticks([]); axS.axvline(0, color="0.85", lw=0.7)
-axS.set_title("control surfaces (FC out)", fontsize=7)
-bars = axS.barh([0, 1, 2], [0, 0, 0], height=0.6,
-                color=["#2ca02c", "#1f77b4", "#d62728"])
-ax.set_title(f"INAV orientation hold vs JSBSim -- {MAN}")
+# controller OUT: what the FC drives onto the actuators (surfaces + throttle)
+# pilot mode SWITCHES (aux channels): lever position = channel value
+fig.text(0.735, 0.40, "switches", fontsize=7.5, fontweight="bold")
+axSw = fig.add_axes([0.74, 0.28, 0.22, 0.11])
+axSw.set_xlim(-0.5, 3.5); axSw.set_ylim(-1.4, 1.4)
+axSw.set_xticks([0, 1, 2, 3]); axSw.set_xticklabels(["ARM", "ANGLE", "FLOOR", "SEL"], fontsize=7)
+axSw.set_yticks([])
+axSw.set_xlim(-0.5, 4.6)
+for xx in range(4):
+    axSw.plot([xx, xx], [-1, 1], color="0.8", lw=3, solid_capstyle="round")
+# detent labels: FLOOR channel (F ROLL mid / FLOOR high) + SEL attitude targets
+for yy, lbl in ((0.15, "F ROLL"), (0.8, "FLOOR")):
+    axSw.text(2.18, yy, lbl, fontsize=5.5, va="center", color="0.35")
+for yy, lbl in ((-0.46, "INV"), (0.02, "KN L"), (0.5, "KN R"), (0.97, "HANG")):
+    axSw.text(3.18, yy, lbl, fontsize=5.5, va="center", color="0.35")
+levers, = axSw.plot([0, 1, 2, 3], [-1, -1, -1, -1], "s", ms=8, color="#d62728")
+fig.text(0.735, 0.245, "controller OUT: FC commands", fontsize=7.5, fontweight="bold")
+axS = fig.add_axes([0.80, 0.10, 0.16, 0.11])
+axS.set_xlim(-1.1, 1.1); axS.set_ylim(-0.6, 3.6)
+axS.set_yticks([0, 1, 2, 3])
+axS.set_yticklabels(["throttle", "rudder", "elevator", "aileron"], fontsize=7)
+axS.set_xticks([-1, 0, 1]); axS.set_xticklabels(["-1", "0", "1"], fontsize=6)
+axS.axvline(0, color="0.85", lw=0.7)
+bars = axS.barh([0, 1, 2, 3], [0, 0, 0, 0], height=0.6,
+                color=["#ff7f0e", "#2ca02c", "#1f77b4", "#d62728"])
 NOTES = {
     "inverted":    "Inverted flight: rolled 180 deg and held, controller keeps altitude at ~50 kts.",
     "knife_left":  "Knife-edge (left): rolls toward 90 deg, but the airframe has no fuselage lift, so it bleeds speed into a flat spin.",
     "knife_right": "Knife-edge (right): as knife_left -- without fuselage lift the speed decays and it mushes.",
     "hang":        "Prop-hang: nose held near vertical at near-zero airspeed; heading wanders.",
     "roll_hold":   "Axial roll with altitude assist: controller rolls while trying to hold height.",
-    "floor_dive":  "Safety-floor deep dive: nose pushed down until the altitude floor catches and levels it.",
+    "floor_dive":  "Safety floor: held dive is caught at the floor; then same dive with the floor switched OFF punches through.",
+    "flat_spin":   "Flat spin: pro-spin inputs in ACRO (idle, full up-elevator, full rudder) until it autorotates, then ANGLE is flipped on and the controller recovers.",
 }
 fig.text(0.5, 0.975, NOTES.get(MAN, ""), ha="center", va="top",
          fontsize=9, style="italic", wrap=True)
@@ -146,12 +216,16 @@ def frame(i):
     trail.set_data(y[:i+1], x[:i+1]); trail.set_3d_properties(z[:i+1])
     txt.set_text(f"t={t[i]:5.1f}s  {ph[i].upper():7s}  roll={math.degrees(rpy[i][0]):+6.0f} deg  alt={z[i]:4.0f} m")
     marker.set_xdata([t[i], t[i]])
+    markerP.set_xdata([t[i], t[i]])
     mtxt.set_text(mode[i])
     dotL.set_data([st_rud[i]], [st_thr[i] * 2 - 1])
     dotR.set_data([st_ail[i]], [-st_ele[i]])
-    for b, val in zip(bars, (cs_rud[i], cs_ele[i], cs_ail[i])):
+    for b, val in zip(bars, (fc_thr[i], cs_rud[i], cs_ele[i], cs_ail[i])):
         b.set_width(val)
-    return seg_lines + [trail, txt, mtxt, marker, dotL, dotR] + list(bars)
+    levers.set_data([0, 1, 2, 3],
+                    [max(-1, min(1, (sw[k][i] - 1500) / 500.0))
+                     for k in ("st_arm", "st_angle", "st_inv", "st_sel")])
+    return seg_lines + [trail, txt, mtxt, marker, markerP, dotL, dotR, levers] + list(bars)
 
 anim = FuncAnimation(fig, frame, frames=len(rows), interval=60, blit=False)
 outdir = "docs/videos"; os.makedirs(outdir, exist_ok=True)

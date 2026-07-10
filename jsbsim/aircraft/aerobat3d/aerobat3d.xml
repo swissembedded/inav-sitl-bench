@@ -103,10 +103,31 @@
   <aerodynamics>
     <axis name="LIFT">
       <function name="aero/force/Lift_alpha">
-        <description>Symmetric airfoil lift, CL0 = 0</description>
+        <description>Symmetric airfoil lift with stall: linear 4.2/rad up to
+          15 deg (unchanged from the previous linear model, so trims stay
+          valid), CLmax 1.15 at 20 deg, breaks to 0.85 at 30 deg, zero at 90.
+          Without this the wing carried the plane at alpha 60-80 deg and the
+          prop-hang never actually hung on the propeller.</description>
         <product>
           <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
-          <property>aero/alpha-rad</property> <value> 4.2 </value>
+          <table>
+            <independentVar lookup="row">aero/alpha-rad</independentVar>
+            <tableData>
+              -3.142   0.00
+              -1.571   0.00
+              -0.785  -0.60
+              -0.524  -0.85
+              -0.349  -1.15
+              -0.262  -1.10
+               0.000   0.00
+               0.262   1.10
+               0.349   1.15
+               0.524   0.85
+               0.785   0.60
+               1.571   0.00
+               3.142   0.00
+            </tableData>
+          </table>
         </product>
       </function>
       <function name="aero/force/Lift_elevator">
@@ -127,6 +148,28 @@
         <product>
           <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
           <property>aero/cl-squared</property> <value> 0.09 </value>
+        </product>
+      </function>
+      <function name="aero/force/Drag_alpha_poststall">
+        <description>Flat-plate drag rise past the stall (zero in the linear
+          range, ~1.3 broadside at alpha 90)</description>
+        <product>
+          <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
+          <table>
+            <independentVar lookup="row">aero/alpha-rad</independentVar>
+            <tableData>
+              -3.142   0.00
+              -1.571   1.30
+              -1.047   1.00
+              -0.524   0.30
+              -0.262   0.00
+               0.262   0.00
+               0.524   0.30
+               1.047   1.00
+               1.571   1.30
+               3.142   0.00
+            </tableData>
+          </table>
         </product>
       </function>
     </axis>
@@ -176,6 +219,16 @@
           <value> -1.10 </value>
         </product>
       </function>
+      <function name="aero/moment/Pitch_elevator_propwash">
+        <description>Prop-wash elevator authority: thrust-proportional, so the
+          tail keeps working at zero airspeed (3D airframes hang on this).
+          Sized like the qbar term at ~35 kts with full throttle.</description>
+        <product>
+          <property>fcs/throttle-cmd-norm</property>
+          <property>fcs/elevator-pos-norm</property>
+          <value> -18.0 </value>
+        </product>
+      </function>
     </axis>
     <axis name="YAW">
       <function name="aero/moment/Yaw_beta">
@@ -193,10 +246,21 @@
         </product>
       </function>
       <function name="aero/moment/Yaw_rudder">
+        <!-- positive rudder command = nose RIGHT, matching the INAV
+             stabilized-yaw sign (the C172-style negative sign made the
+             yaw loop positive feedback -> steady inverted circling) -->
         <product>
           <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
           <property>metrics/bw-ft</property> <property>fcs/rudder-pos-norm</property>
-          <value> -0.14 </value>
+          <value> 0.14 </value>
+        </product>
+      </function>
+      <function name="aero/moment/Yaw_rudder_propwash">
+        <description>Prop-wash rudder authority (see Pitch_elevator_propwash)</description>
+        <product>
+          <property>fcs/throttle-cmd-norm</property>
+          <property>fcs/rudder-pos-norm</property>
+          <value> 12.0 </value>
         </product>
       </function>
     </axis>
