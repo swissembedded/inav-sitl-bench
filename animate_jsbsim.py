@@ -170,43 +170,52 @@ trail, = ax.plot([], [], [], color="0.6", lw=1.2)
 seg_lines = [ax.plot([], [], [], lw=2.5)[0] for _ in SEGS]
 txt = ax.text2D(0.02, 0.95, "", transform=ax.transAxes, fontsize=10)
 mtxt = ax.text2D(0.02, 0.88, "", transform=ax.transAxes, fontsize=14, fontweight="bold", color="#d62728")
-# --- right column of insets (x >= 0.72), stacked top -> bottom, no overlap ---
+# --- right column: four identical panels (same x, width, height, spacing) ---
 import os
-# controller settings (static), top of the column
+PX, PW, PH = 0.74, 0.22, 0.155
+PY = [0.775, 0.565, 0.355, 0.145]
+def panel(y, title):
+    p = fig.add_axes([PX, y, PW, PH])
+    p.set_title(title, fontsize=8.5, fontweight="bold", loc="left")
+    return p
+
+# 1) controller settings (static text)
+axSet = panel(PY[0], "controller settings")
+axSet.set_xticks([]); axSet.set_yticks([])
 if os.path.exists(f"jsbsim_params_{MAN}.txt"):
-    ptext = "controller settings:" + chr(10) + open(f"jsbsim_params_{MAN}.txt").read()
-    fig.text(0.735, 0.90, ptext, fontsize=7.5, family="monospace", va="top",
-             bbox=dict(boxstyle="round", fc="0.95", ec="0.7"))
-# controller IN: pilot stick commands (the setpoints the human gives)
-fig.text(0.735, 0.60, "controller IN: pilot sticks", fontsize=7.5, fontweight="bold")
-axL = fig.add_axes([0.74, 0.45, 0.10, 0.11]); axR = fig.add_axes([0.86, 0.45, 0.10, 0.11])
-for a_ in (axL, axR):
-    a_.set_xlim(-1.2, 1.2); a_.set_ylim(-1.2, 1.2); a_.set_xticks([]); a_.set_yticks([])
-    a_.axhline(0, color="0.85", lw=0.7); a_.axvline(0, color="0.85", lw=0.7)
-axL.set_title("thr/rud", fontsize=8); axR.set_title("ail/ele", fontsize=8)
-dotL, = axL.plot([0], [0], "o", ms=7, color="#1f77b4")
-dotR, = axR.plot([0], [0], "o", ms=7, color="#1f77b4")
-# controller OUT: what the FC drives onto the actuators (surfaces + throttle)
-# pilot mode SWITCHES (aux channels): lever position = channel value
-fig.text(0.735, 0.40, "switches", fontsize=7.5, fontweight="bold")
-axSw = fig.add_axes([0.74, 0.28, 0.22, 0.11])
-axSw.set_xlim(-0.5, 3.5); axSw.set_ylim(-1.4, 1.4)
-axSw.set_xticks([0, 1, 2, 3]); axSw.set_xticklabels(["ARM", "ANGLE", "FLOOR", "SEL"], fontsize=8)
+    axSet.text(0.04, 0.97, open(f"jsbsim_params_{MAN}.txt").read(), fontsize=6.8,
+               family="monospace", va="top", transform=axSet.transAxes)
+
+# 2) controller IN: pilot sticks (two crosses in one panel)
+axIN = panel(PY[1], "controller IN: pilot sticks")
+axIN.set_xlim(-2.7, 2.7); axIN.set_ylim(-1.55, 1.55)
+axIN.set_xticks([]); axIN.set_yticks([])
+for cx, lbl in ((-1.4, "thr/rud"), (1.4, "ail/ele")):
+    axIN.plot([cx-1, cx+1], [0, 0], color="0.85", lw=0.8)
+    axIN.plot([cx, cx], [-1, 1], color="0.85", lw=0.8)
+    axIN.text(cx, 1.18, lbl, ha="center", fontsize=7, color="0.35")
+dotL, = axIN.plot([-1.4], [0], "o", ms=7, color="#1f77b4")
+dotR, = axIN.plot([1.4], [0], "o", ms=7, color="#1f77b4")
+
+# 3) pilot mode switches (lever position = channel value)
+axSw = panel(PY[2], "switches")
+axSw.set_xlim(-0.5, 4.6); axSw.set_ylim(-1.5, 1.5)
+axSw.set_xticks([0, 1, 2, 3]); axSw.set_xticklabels(["ARM", "ANGLE", "FLOOR", "SEL"], fontsize=7.5)
 axSw.set_yticks([])
-axSw.set_xlim(-0.5, 4.6)
 for xx in range(4):
     axSw.plot([xx, xx], [-1, 1], color="0.8", lw=3, solid_capstyle="round")
-# detent labels: FLOOR channel (F ROLL mid / FLOOR high) + SEL attitude targets
 for yy, lbl in ((0.15, "F ROLL"), (0.8, "FLOOR")):
-    axSw.text(2.18, yy, lbl, fontsize=7, va="center", color="0.35")
+    axSw.text(2.18, yy, lbl, fontsize=6.5, va="center", color="0.35")
 for yy, lbl in ((-0.46, "INV"), (0.02, "KN L"), (0.5, "KN R"), (0.97, "HANG")):
-    axSw.text(3.18, yy, lbl, fontsize=7, va="center", color="0.35")
+    axSw.text(3.18, yy, lbl, fontsize=6.5, va="center", color="0.35")
 levers, = axSw.plot([0, 1, 2, 3], [-1, -1, -1, -1], "s", ms=8, color="#d62728")
-fig.text(0.735, 0.245, "controller OUT: FC commands", fontsize=7.5, fontweight="bold")
-axS = fig.add_axes([0.74, 0.10, 0.22, 0.11])
+
+# 4) controller OUT: FC commands (instant bars)
+axS = panel(PY[3], "controller OUT: FC commands")
 axS.set_xlim(-1.1, 1.1); axS.set_ylim(-0.6, 3.6)
-axS.set_yticks([0, 1, 2, 3])
-axS.set_yticklabels(["throttle", "rudder", "elevator", "aileron"], fontsize=7)
+axS.set_yticks([])
+for yy, lbl in enumerate(("throttle", "rudder", "elevator", "aileron")):
+    axS.text(-1.05, yy + 0.38, lbl, fontsize=6.5, va="center", color="0.35")
 axS.set_xticks([-1, 0, 1]); axS.set_xticklabels(["-1", "0", "1"], fontsize=6)
 axS.axvline(0, color="0.85", lw=0.7)
 bars = axS.barh([0, 1, 2, 3], [0, 0, 0, 0], height=0.6,
@@ -239,8 +248,8 @@ def frame(i):
     markerP.set_xdata([t[i], t[i]])
     markerO.set_xdata([t[i], t[i]])
     mtxt.set_text(mode[i])
-    dotL.set_data([st_rud[i]], [st_thr[i] * 2 - 1])
-    dotR.set_data([st_ail[i]], [-st_ele[i]])
+    dotL.set_data([-1.4 + st_rud[i]], [st_thr[i] * 2 - 1])
+    dotR.set_data([1.4 + st_ail[i]], [-st_ele[i]])
     for b, val in zip(bars, (fc_thr[i], cs_rud[i], cs_ele[i], cs_ail[i])):
         b.set_width(val)
     levers.set_data([0, 1, 2, 3],
