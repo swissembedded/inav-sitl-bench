@@ -110,7 +110,7 @@ hover); no propeller model, no torque yet.
 Workflow (SITL.exe running configurator-only, provisioned via
 `bench.py provision`):
 
-    python jsbsim_fly.py --flip-ele <inverted|knife_left|knife_right|hang|roll_hold|floor_dive>
+    python jsbsim_fly.py --flip-ele <inverted|knife_left|knife_right|hang|roll_hold|floor_dive|flat_spin>
     python animate_jsbsim.py <maneuver>     # 3D replay video -> docs/videos/jsbsim_<maneuver>.mp4
     python plot_jsbsim.py                   # static 4-panel figure
 
