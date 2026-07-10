@@ -111,6 +111,13 @@ class JSBSimPlant:
         return ((f["position/lat-gc-deg"] - la0) * 111320.0,
                 (f["position/long-gc-deg"] - lo0) * 111320.0 * _m.cos(_m.radians(la0)))
 
+    def set_wind(self, north_ms=0.0, east_ms=0.0, down_ms=0.0):
+        """Steady wind / gust in earth frame [m/s]; positive down = downdraft."""
+        f = self.fdm
+        f["atmosphere/wind-north-fps"] = north_ms / FT2M
+        f["atmosphere/wind-east-fps"] = east_ms / FT2M
+        f["atmosphere/wind-down-fps"] = down_ms / FT2M
+
     def gps(self):
         """GPS-fix injection so the FC's nav altitude estimate becomes trusted
         (navIsAltitudeEstimateTrusted) -- the figure altitude assist returns 0

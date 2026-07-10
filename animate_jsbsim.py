@@ -98,9 +98,10 @@ fig = plt.figure(figsize=(11, 9))
 # with altitude/IAS on the second axis. solid = JSBSim truth, dashed = FC
 # estimate; if the loop is valid they overlap.
 # right column (x >= 0.72) is reserved for the info insets so nothing overlaps.
-ax = fig.add_axes([0.01, 0.44, 0.66, 0.50], projection="3d")
-axRoll = fig.add_axes([0.09, 0.25, 0.56, 0.16])
-axPit  = fig.add_axes([0.09, 0.05, 0.56, 0.16], sharex=axRoll)
+ax = fig.add_axes([0.01, 0.47, 0.66, 0.47], projection="3d")
+axRoll = fig.add_axes([0.09, 0.325, 0.56, 0.125])
+axPit  = fig.add_axes([0.09, 0.175, 0.56, 0.125], sharex=axRoll)
+axOut  = fig.add_axes([0.09, 0.045, 0.56, 0.10], sharex=axRoll)
 axRoll.plot(t, js_roll, "#d62728", lw=1.4, label="roll truth")
 axRoll.plot(t, fc_roll, "k", lw=1.0, ls="--", label="roll FC est")
 axRoll.axhline(180, color="gray", ls=":", lw=0.8)
@@ -114,7 +115,7 @@ plt.setp(axRoll.get_xticklabels(), visible=False)
 axPit.plot(t, js_pitch, "#1f77b4", lw=1.4, label="pitch truth")
 axPit.plot(t, fc_pitch, "k", lw=1.0, ls="--", label="pitch FC est")
 axPit.set_ylabel("pitch [deg]")
-axPit.set_xlabel("t [s]")
+plt.setp(axPit.get_xticklabels(), visible=False)
 axPit.legend(fontsize=7, loc="upper left")
 axPit.grid(alpha=0.3)
 axPb = axPit.twinx()
@@ -125,9 +126,10 @@ axPb.plot(t, [v * 100 for v in fc_thr], "#ff7f0e", lw=1.0, label="thrust [%]")
 axPb.set_ylabel("IAS [kts] / alt [m] / thr [%]", fontsize=8)
 axPb.legend(fontsize=7, loc="upper right")
 PREP = ("settle", "cal", "armL", "armH", "level")
+gust_t = [tt for tt, p in zip(t, ph) if p == "gust"]
 man_t = [tt for tt, p in zip(t, ph) if p == "manual"]
 seq_t = [tt for tt, p in zip(t, ph) if p not in PREP and p != "manual"]
-for a_ in (axRoll, axPit):
+for a_ in (axRoll, axPit, axOut):
     if man_t:
         a_.axvspan(man_t[0], man_t[-1], color="0.5", alpha=0.10)
     if seq_t:
@@ -136,11 +138,28 @@ for a_ in (axRoll, axPit):
 if man_t:
     axRoll.text(0.5 * (man_t[0] + man_t[-1]), axRoll.get_ylim()[1] * 0.9, "manual",
                 ha="center", fontsize=8, color="0.35")
+if gust_t:
+    for a_ in (axRoll, axPit, axOut):
+        a_.axvspan(gust_t[0], gust_t[-1], color="#17becf", alpha=0.18, zorder=0)
+    axRoll.text(0.5 * (gust_t[0] + gust_t[-1]), axRoll.get_ylim()[0] * 0.85, "gust",
+                ha="center", fontsize=8, color="#0e7a8a")
 if seq_t:
     axRoll.text(0.5 * (seq_t[0] + seq_t[-1]), axRoll.get_ylim()[1] * 0.9, "sequence",
                 ha="center", fontsize=8, color="#d62728")
+# FC outputs over time: a flat zero line here means the controller is NOT
+# correcting -- this is the trace that exposes a dead assist immediately
+axOut.plot(t, cs_ele, "#1f77b4", lw=1.2, label="elevator")
+axOut.plot(t, cs_ail, "#d62728", lw=0.9, label="aileron")
+axOut.plot(t, cs_rud, "#2ca02c", lw=0.9, label="rudder")
+axOut.plot(t, fc_thr, "#ff7f0e", lw=0.9, label="throttle")
+axOut.set_ylim(-1.05, 1.05)
+axOut.set_ylabel("FC out", fontsize=8)
+axOut.set_xlabel("t [s]")
+axOut.legend(fontsize=6.5, loc="upper left", ncol=4)
+axOut.grid(alpha=0.3)
 marker = axRoll.axvline(t[0], color="k", lw=1.5)
 markerP = axPit.axvline(t[0], color="k", lw=1.5)
+markerO = axOut.axvline(t[0], color="k", lw=1.5)
 ax.set_xlabel("east [m]"); ax.set_ylabel("north [m]"); ax.set_zlabel("alt [m]")
 ax.set_xlim(min(y)-100, max(y)+100); ax.set_ylim(min(x)-100, max(x)+100)
 ax.set_zlim(min(z)-50, max(z)+50)
@@ -217,6 +236,7 @@ def frame(i):
     txt.set_text(f"t={t[i]:5.1f}s  {ph[i].upper():7s}  roll={math.degrees(rpy[i][0]):+6.0f} deg  alt={z[i]:4.0f} m")
     marker.set_xdata([t[i], t[i]])
     markerP.set_xdata([t[i], t[i]])
+    markerO.set_xdata([t[i], t[i]])
     mtxt.set_text(mode[i])
     dotL.set_data([st_rud[i]], [st_thr[i] * 2 - 1])
     dotR.set_data([st_ail[i]], [-st_ele[i]])
@@ -225,7 +245,7 @@ def frame(i):
     levers.set_data([0, 1, 2, 3],
                     [max(-1, min(1, (sw[k][i] - 1500) / 500.0))
                      for k in ("st_arm", "st_angle", "st_inv", "st_sel")])
-    return seg_lines + [trail, txt, mtxt, marker, markerP, dotL, dotR, levers] + list(bars)
+    return seg_lines + [trail, txt, mtxt, marker, markerP, markerO, dotL, dotR, levers] + list(bars)
 
 anim = FuncAnimation(fig, frame, frames=len(rows), interval=60, blit=False)
 outdir = "docs/videos"; os.makedirs(outdir, exist_ok=True)
