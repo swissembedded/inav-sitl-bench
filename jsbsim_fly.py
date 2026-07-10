@@ -237,6 +237,16 @@ elif MAN == "hang":
     loop(8, "hang", rc_ch(thr=thrM, arm=RC_HIGH, angle=RC_LOW, **MAN_RC), print_every=0.7)
     # exit transition: drop the target, ANGLE catches it back to level flight
     loop(8, "exit", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
+elif MAN == "inverted":
+    # settle the hold straight first; the deliberate inverted turn comes
+    # only once the hold is stable (pilot rudder, visible on the stick)
+    loop(8, "inverted", rc_ch(thr=thrM, arm=RC_HIGH, angle=RC_LOW, **MAN_RC), print_every=0.7)
+    plant.set_wind(down_ms=3.0)
+    loop(4, "gust", rc_ch(thr=thrM, arm=RC_HIGH, angle=RC_LOW, **MAN_RC), print_every=0.7)
+    plant.set_wind()
+    loop(3, "inverted", rc_ch(thr=thrM, arm=RC_HIGH, angle=RC_LOW, **MAN_RC), print_every=0.7)
+    loop(6, "inv-turn", rc_ch(thr=thrM, arm=RC_HIGH, angle=RC_LOW, rud=1650, **MAN_RC), print_every=0.7)
+    loop(5, "inverted", rc_ch(thr=thrM, arm=RC_HIGH, angle=RC_LOW, **MAN_RC), print_every=0.7)
 else:
     # hold with a disturbance: 4 s downdraft gust mid-hold -- the honest
     # proof of regulation is the visible actuator response and the altitude
