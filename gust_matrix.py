@@ -154,7 +154,8 @@ class Runner:
                 self.plant.step(dt=DT)
             jr, jp, jy = self.plant.rpy()
             self.rows.append((time.time() - self.t0, self.man, phase,
-                              jr, jp, jy, self.plant.z))
+                              jr, jp, jy, self.plant.z,
+                              ail, ele, rud, thr))
             while True:
                 rem = DT - (time.perf_counter() - it0)
                 if rem <= 0:
@@ -221,9 +222,10 @@ def run_maneuver(man, gust_ms, do_restart, sets=()):
     def flush_rows():
         with open("gust_log.csv", "a", newline="") as f:
             w = csv.writer(f)
-            for t, mn, phase, jr, jp, jy, z in rows:
+            for t, mn, phase, jr, jp, jy, z, ail, ele, rud, thr in rows:
                 w.writerow([f"{t:.2f}", mn, phase, f"{jr:.1f}", f"{jp:.1f}",
-                            f"{jy:.1f}", f"{z:.1f}"])
+                            f"{jy:.1f}", f"{z:.1f}", f"{ail:.2f}",
+                            f"{ele:.2f}", f"{rud:.2f}", f"{thr:.2f}"])
         rows.clear()
 
     results = []
@@ -329,7 +331,8 @@ def main():
 
     with open("gust_log.csv", "w", newline="") as f:
         csv.writer(f).writerow(["t", "maneuver", "phase", "js_roll",
-                                "js_pitch", "js_yaw", "alt"])
+                                "js_pitch", "js_yaw", "alt",
+                                "ail", "ele", "rud", "thr"])
 
     all_results = []
     for man in mans:
