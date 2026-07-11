@@ -286,14 +286,12 @@ def frame(i):
 anim = FuncAnimation(fig, frame, frames=len(rows), interval=60, blit=False)
 outdir = "docs/videos"; os.makedirs(outdir, exist_ok=True)
 outpath = f"{outdir}/jsbsim_{MAN}.mp4"
-# AV1 (libaom), quality-based: ~5x smaller than the old fixed-bitrate
-# H.264 for this line-graphics content -- the videos live in the repo and
-# every regeneration adds full new blobs to the history. Trade-off:
-# Safari plays AV1 only on the newest hardware; Chrome/Edge/Firefox
-# decode it everywhere (dav1d).
-anim.save(outpath, writer=FFMpegWriter(fps=10, codec="libaom-av1",
-                                       extra_args=["-crf", "34", "-b:v", "0",
-                                                   "-cpu-used", "6", "-row-mt", "1",
+# Quality-based encoding instead of a fixed bitrate: line graphics on a
+# static background compress far better under CRF (~60 percent smaller at
+# visually lossless quality). H.264 stays: it is the only format the
+# GitHub PR preview plays everywhere.
+anim.save(outpath, writer=FFMpegWriter(fps=10, codec="libx264",
+                                       extra_args=["-crf", "22", "-preset", "slow",
                                                    "-pix_fmt", "yuv420p",
                                                    "-movflags", "+faststart"]), dpi=100)
 print("written", outpath, len(rows), "frames")
