@@ -76,11 +76,6 @@ the FC was right all along (and the bench's own elevation logs lied the
 same way). Symptom to remember: constant FC-vs-plant attitude offset that
 "never corrects" = suspect the BENCH world model, not the firmware.
 
-## TODO
-
-- Full TVC plant term (tau = thrust x lever x sin(vane angle)) for a
-  closed-loop hover scenario — the tvc check verifies the mixer path only.
-
 ## License
 
 GPL-3.0-or-later — see [LICENSE](LICENSE).
