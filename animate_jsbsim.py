@@ -286,6 +286,12 @@ def frame(i):
 anim = FuncAnimation(fig, frame, frames=len(rows), interval=60, blit=False)
 outdir = "docs/videos"; os.makedirs(outdir, exist_ok=True)
 outpath = f"{outdir}/jsbsim_{MAN}.mp4"
-anim.save(outpath, writer=FFMpegWriter(fps=10, bitrate=1800,
-                                       extra_args=["-movflags", "+faststart"]), dpi=100)
+# Quality-based encoding instead of a fixed bitrate: line graphics on a
+# static background compress far better under CRF (~60 percent smaller at
+# visually lossless quality). H.264 stays: it is the only format the
+# GitHub PR preview plays everywhere.
+anim.save(outpath, writer=FFMpegWriter(fps=10, codec="libx264",
+                                       extra_args=["-crf", "22", "-preset", "slow",
+                                                   "-pix_fmt", "yuv420p",
+                                                   "-movflags", "+faststart"]), dpi=100)
 print("written", outpath, len(rows), "frames")
