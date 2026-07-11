@@ -205,9 +205,16 @@ def run_maneuver(man, gust_ms, do_restart, sets=()):
 
     wait_boot_calibration(m)
     for name, value in sets:
-        size = len(m.request(0x1003, name.encode() + b"\x00"))
-        m.set_setting(name, int(value).to_bytes(size, "little", signed=value < 0))
-        print(f"  set {name} = {value} ({size} bytes)")
+        try:
+            size = len(m.request(0x1003, name.encode() + b"\x00"))
+            m.set_setting(name, int(value).to_bytes(size, "little", signed=value < 0))
+            print(f"  set {name} = {value} ({size} bytes)")
+        except (IOError, OverflowError) as e:
+            # out-of-range value or unknown setting: fail the run loudly
+            # instead of dying mid-battery with a stack trace
+            print(f"  set {name} = {value} REJECTED ({e}), aborting maneuver")
+            m.close()
+            return None
     run.fly(6, rc_ch(), "settle", freeze=True)
     t0 = time.time()
     while (arming_flags(m) & FLAG_CAL) and time.time() - t0 < 25:
