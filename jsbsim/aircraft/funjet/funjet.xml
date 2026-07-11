@@ -1,0 +1,246 @@
+<?xml version="1.0"?>
+<!--
+  funjet: generic pusher-delta with thrust vectoring for the INAV
+  orientation-hold bench (GPL-3.0-or-later, see repo LICENSE). Elevons only,
+  no rudder, no prop wash over any surface (pusher) - at hover ALL control
+  authority comes from the vectored nozzle. Sized like a ~0.8 m span / 0.9 kg
+  hotliner-delta with T/W ~1.3.
+-->
+<fdm_config name="funjet" version="2.0" release="ALPHA">
+  <fileheader>
+    <author>Daniel Haensse</author>
+    <description>Generic 0.8 m / 0.9 kg pusher delta, 2-axis thrust vectoring</description>
+  </fileheader>
+
+  <metrics>
+    <wingarea unit="M2"> 0.22 </wingarea>
+    <wingspan unit="M"> 0.79 </wingspan>
+    <chord unit="M"> 0.28 </chord>
+    <htailarea unit="M2"> 0.0 </htailarea>
+    <htailarm unit="M"> 0.0 </htailarm>
+    <vtailarea unit="M2"> 0.02 </vtailarea>
+    <vtailarm unit="M"> 0.30 </vtailarm>
+    <location name="AERORP" unit="M"> <x> 0.0 </x> <y> 0 </y> <z> 0 </z> </location>
+    <location name="EYEPOINT" unit="M"> <x> 0 </x> <y> 0 </y> <z> 0.05 </z> </location>
+    <location name="VRP" unit="M"> <x> 0 </x> <y> 0 </y> <z> 0 </z> </location>
+  </metrics>
+
+  <mass_balance>
+    <ixx unit="KG*M2"> 0.008 </ixx>
+    <iyy unit="KG*M2"> 0.012 </iyy>
+    <izz unit="KG*M2"> 0.018 </izz>
+    <emptywt unit="KG"> 0.75 </emptywt>
+    <location name="CG" unit="M"> <x> 0 </x> <y> 0 </y> <z> 0 </z> </location>
+    <pointmass name="battery">
+      <weight unit="KG"> 0.15 </weight>
+      <location unit="M"> <x> 0.03 </x> <y> 0 </y> <z> 0 </z> </location>
+    </pointmass>
+  </mass_balance>
+
+  <ground_reactions>
+    <contact type="BOGEY" name="BELLY_F">
+      <location unit="M"> <x> 0.15 </x> <y> 0 </y> <z> -0.05 </z> </location>
+      <static_friction> 0.8 </static_friction> <dynamic_friction> 0.5 </dynamic_friction>
+      <spring_coeff unit="N/M"> 600 </spring_coeff> <damping_coeff unit="N/M/SEC"> 40 </damping_coeff>
+    </contact>
+    <contact type="BOGEY" name="BELLY_L">
+      <location unit="M"> <x> -0.15 </x> <y> -0.2 </y> <z> -0.05 </z> </location>
+      <static_friction> 0.8 </static_friction> <dynamic_friction> 0.5 </dynamic_friction>
+      <spring_coeff unit="N/M"> 600 </spring_coeff> <damping_coeff unit="N/M/SEC"> 40 </damping_coeff>
+    </contact>
+    <contact type="BOGEY" name="BELLY_R">
+      <location unit="M"> <x> -0.15 </x> <y> 0.2 </y> <z> -0.05 </z> </location>
+      <static_friction> 0.8 </static_friction> <dynamic_friction> 0.5 </dynamic_friction>
+      <spring_coeff unit="N/M"> 600 </spring_coeff> <damping_coeff unit="N/M/SEC"> 40 </damping_coeff>
+    </contact>
+  </ground_reactions>
+
+  <!-- pusher thrust as body-X force at the tail; T/W ~1.3 => 2.6 LBS -->
+  <external_reactions>
+    <force name="motor" frame="BODY" unit="LBS">
+      <function>
+        <product>
+          <property> fcs/throttle-cmd-norm </property>
+          <value> 2.6 </value>
+        </product>
+      </function>
+      <location unit="M"> <x> -0.35 </x> <y> 0 </y> <z> 0 </z> </location>
+      <direction> <x> 1 </x> <y> 0 </y> <z> 0 </z> </direction>
+    </force>
+  </external_reactions>
+
+  <flight_control name="FCS">
+    <property value="0.0"> fcs/throttle-cmd-norm </property>
+    <!-- vectored nozzle deflection, normalized -1..1 (~20 deg full) -->
+    <property value="0.0"> fcs/tvc-pitch-norm </property>
+    <property value="0.0"> fcs/tvc-yaw-norm </property>
+    <channel name="Roll">
+      <aerosurface_scale name="aileron">
+        <input>fcs/aileron-cmd-norm</input>
+        <range> <min>-1</min> <max>1</max> </range>
+        <output>fcs/aileron-pos-norm</output>
+      </aerosurface_scale>
+    </channel>
+    <channel name="Pitch">
+      <aerosurface_scale name="elevator">
+        <input>fcs/elevator-cmd-norm</input>
+        <range> <min>-1</min> <max>1</max> </range>
+        <output>fcs/elevator-pos-norm</output>
+      </aerosurface_scale>
+    </channel>
+    <channel name="Yaw">
+      <aerosurface_scale name="rudder">
+        <input>fcs/rudder-cmd-norm</input>
+        <range> <min>-1</min> <max>1</max> </range>
+        <output>fcs/rudder-pos-norm</output>
+      </aerosurface_scale>
+    </channel>
+  </flight_control>
+
+  <aerodynamics>
+    <axis name="LIFT">
+      <function name="aero/force/Lift_alpha">
+        <description>Delta wing lift with soft, late stall (CLmax ~1.05 at 25 deg)</description>
+        <product>
+          <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
+          <table>
+            <independentVar lookup="row">aero/alpha-rad</independentVar>
+            <tableData>
+              -3.142   0.00
+              -1.571   0.00
+              -0.785  -0.65
+              -0.611  -0.90
+              -0.436  -1.05
+               0.000   0.00
+               0.436   1.05
+               0.611   0.90
+               0.785   0.65
+               1.571   0.00
+               3.142   0.00
+            </tableData>
+          </table>
+        </product>
+      </function>
+      <function name="aero/force/Lift_elevator">
+        <product>
+          <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
+          <property>fcs/elevator-pos-norm</property> <value> 0.25 </value>
+        </product>
+      </function>
+    </axis>
+    <axis name="DRAG">
+      <function name="aero/force/Drag_basic">
+        <product>
+          <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
+          <value> 0.035 </value>
+        </product>
+      </function>
+      <function name="aero/force/Drag_induced">
+        <product>
+          <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
+          <property>aero/cl-squared</property> <value> 0.14 </value>
+        </product>
+      </function>
+      <function name="aero/force/Drag_alpha_poststall">
+        <product>
+          <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
+          <table>
+            <independentVar lookup="row">aero/alpha-rad</independentVar>
+            <tableData>
+              -3.142   0.00
+              -1.571   1.20
+              -0.785   0.45
+              -0.436   0.00
+               0.436   0.00
+               0.785   0.45
+               1.571   1.20
+               3.142   0.00
+            </tableData>
+          </table>
+        </product>
+      </function>
+    </axis>
+    <axis name="SIDE">
+      <function name="aero/force/Side_beta">
+        <product>
+          <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
+          <property>aero/beta-rad</property> <value> -0.25 </value>
+        </product>
+      </function>
+    </axis>
+    <axis name="ROLL">
+      <function name="aero/moment/Roll_damp">
+        <product>
+          <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
+          <property>metrics/bw-ft</property> <property>aero/bi2vel</property>
+          <property>velocities/p-aero-rad_sec</property> <value> -0.30 </value>
+        </product>
+      </function>
+      <function name="aero/moment/Roll_aileron">
+        <product>
+          <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
+          <property>metrics/bw-ft</property> <property>fcs/aileron-pos-norm</property>
+          <value> 0.22 </value>
+        </product>
+      </function>
+    </axis>
+    <axis name="PITCH">
+      <function name="aero/moment/Pitch_alpha">
+        <product>
+          <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
+          <property>metrics/cbarw-ft</property> <property>aero/alpha-rad</property>
+          <value> -0.20 </value>
+        </product>
+      </function>
+      <function name="aero/moment/Pitch_damp">
+        <product>
+          <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
+          <property>metrics/cbarw-ft</property> <property>aero/ci2vel</property>
+          <property>velocities/q-aero-rad_sec</property> <value> -4.0 </value>
+        </product>
+      </function>
+      <function name="aero/moment/Pitch_elevator">
+        <product>
+          <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
+          <property>metrics/cbarw-ft</property> <property>fcs/elevator-pos-norm</property>
+          <value> -0.55 </value>
+        </product>
+      </function>
+      <function name="aero/moment/Pitch_tvc">
+        <description>Vectored nozzle: tau = T * lever * sin(20 deg * norm);
+          2.6 lb * 1.15 ft * 0.34 ~ 1.0 lb-ft at full throttle+deflection.
+          Positive deflection = nose up. Works at zero airspeed - at hover
+          this is the ONLY pitch authority (pusher, no wash over surfaces).</description>
+        <product>
+          <property>fcs/throttle-cmd-norm</property>
+          <property>fcs/tvc-pitch-norm</property>
+          <value> 1.0 </value>
+        </product>
+      </function>
+    </axis>
+    <axis name="YAW">
+      <function name="aero/moment/Yaw_beta">
+        <product>
+          <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
+          <property>metrics/bw-ft</property> <property>aero/beta-rad</property>
+          <value> 0.04 </value>
+        </product>
+      </function>
+      <function name="aero/moment/Yaw_damp">
+        <product>
+          <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
+          <property>metrics/bw-ft</property> <property>aero/bi2vel</property>
+          <property>velocities/r-aero-rad_sec</property> <value> -0.10 </value>
+        </product>
+      </function>
+      <function name="aero/moment/Yaw_tvc">
+        <description>Vectored nozzle yaw, same sizing as pitch</description>
+        <product>
+          <property>fcs/throttle-cmd-norm</property>
+          <property>fcs/tvc-yaw-norm</property>
+          <value> 1.0 </value>
+        </product>
+      </function>
+    </axis>
+  </aerodynamics>
+</fdm_config>

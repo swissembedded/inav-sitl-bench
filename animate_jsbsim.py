@@ -230,6 +230,7 @@ NOTES = {
     "hang":        "Prop-hang: nose held near vertical at near-zero airspeed; heading wanders.",
     "roll_hold":   "Axial roll with altitude assist: controller rolls while trying to hold height.",
     "floor_dive":  "Safety floor: held dive is caught at the floor; then same dive with the floor switched OFF punches through.",
+    "tvc_hang":    "Prop hang on a pusher delta: elevons are dead at zero airspeed, ALL control authority comes from the vectored nozzle (thrust vectoring with inverse throttle compensation).",
     "flat_spin":   "Flat spin: pro-spin inputs in ACRO (idle, full up-elevator, full rudder) until it autorotates, then ANGLE is flipped on and the controller recovers.",
 }
 fig.text(0.5, 0.975, NOTES.get(MAN, ""), ha="center", va="top",

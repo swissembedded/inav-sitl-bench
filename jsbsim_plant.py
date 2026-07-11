@@ -111,6 +111,12 @@ class JSBSimPlant:
         return ((f["position/lat-gc-deg"] - la0) * 111320.0,
                 (f["position/long-gc-deg"] - lo0) * 111320.0 * _m.cos(_m.radians(la0)))
 
+    def set_tvc(self, pitch_norm=0.0, yaw_norm=0.0):
+        """Vectored-nozzle deflection, -1..1 (funjet); no-op property on
+        airframes without TVC terms."""
+        self.fdm["fcs/tvc-pitch-norm"] = max(-1.0, min(1.0, pitch_norm))
+        self.fdm["fcs/tvc-yaw-norm"] = max(-1.0, min(1.0, yaw_norm))
+
     def set_wind(self, north_ms=0.0, east_ms=0.0, down_ms=0.0):
         """Steady wind / gust in earth frame [m/s]; positive down = downdraft."""
         f = self.fdm

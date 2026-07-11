@@ -78,7 +78,7 @@ m = MspClient()
 _man = next((a for a in sys.argv[1:] if not a.startswith("--")), "inverted")
 # default start = 120 m (legal RC ceiling); floor_dive trades ~100 m away,
 # so it alone starts higher to leave room for the catch
-_model = "c172p" if "--c172" in sys.argv else "aerobat3d"
+_model = "c172p" if "--c172" in sys.argv else ("funjet" if _man == "tvc_hang" else "aerobat3d")
 # 1500 ft for the diagnostic c172 (entry transient), 120 m for everything
 # else -- the altitude floor works relative to the baro zero at start
 plant = JSBSimPlant(model=_model,
@@ -101,6 +101,19 @@ with open(f"jsbsim_params_{_man}.txt", "w") as pf:
             pf.write(f"{name}={int.from_bytes(raw, 'little')}" + chr(10))
         except Exception:
             pass
+# thrust vectoring: replicate the firmware's servo-mixer TVC inputs
+# (INPUT_TVC_* = stabilized * thrustVectoringGain, thrust_vectoring.c)
+def _u(name, default):
+    try:
+        return int.from_bytes(m.request(0x1003, name.encode()+bytes([0])), "little")
+    except Exception:
+        return default
+_TVC_GAIN = _u("tvc_gain", 100) / 100.0
+_TVC_COMP = _u("tvc_thrust_comp", 100) / 100.0
+def tvc_gain(thr01):
+    t = min(max(thr01, 0.25), 1.0)          # TVC_THRUST_COMP_FLOOR
+    return _TVC_GAIN * (1.0 + (1.0/t - 1.0) * _TVC_COMP)
+
 T0 = time.time()
 
 # Fixed-timestep coupling: the plant advances exactly DT per cycle and the
@@ -132,6 +145,9 @@ def loop(secs, phase, rc, thr_override=None, print_every=1.0, freeze=False):
             plant._a_earth = (0.0, 0.0, 0.0)   # static: pure gravity, zero rates
         else:
             plant.set_controls(ail, ele, rud, thr)
+            if _man == "tvc_hang":
+                g = tvc_gain(thr)
+                plant.set_tvc(r.stab_pitch * g, r.stab_yaw * g)
             plant.step(dt=DT)                  # fixed step, paced below
         t_js = time.perf_counter()
         _prof["msp"] += t_msp - it0; _prof["js"] += t_js - t_msp; _prof["n"] += 1
@@ -201,8 +217,9 @@ MAN_RC = {   # SEL detents: 1270 INVERT / 1510 KN L / 1750 KN R / 1985 HANG
     "roll_hold":   dict(invert=1575),                 # F ROLL band, own switch mid
     "floor_dive":  dict(angle=RC_HIGH, invert=1900),  # FLOOR switch high
     "flat_spin":   dict(),                            # pro-spin sticks in ACRO, then ANGLE recovery
+    "tvc_hang":    dict(sel=1985),                    # prop hang on the TVC pusher delta
 }[MAN]
-thrM = 1500 if MAN == "hang" else 1650   # level trim; holds start stable (hang: hover PID owns)
+thrM = 1500 if MAN in ("hang", "tvc_hang") else 1650   # level trim; holds start stable (hang: hover PID owns)
 
 # --- MANUAL: pilot flies by hand in ANGLE so the sticks visibly move,
 #     then we flip the figure switch -> the sequence takes over ---
@@ -229,12 +246,12 @@ elif MAN == "floor_dive":
     # the floor plane (climb high enough first, then keep pushing well past it)
     loop(8, "climb2", rc_ch(thr=1900, arm=RC_HIGH, ele=1800, **MAN_RC), print_every=1)
     loop(13, "dive-nofloor", rc_ch(thr=1700, arm=RC_HIGH, ele=1150, angle=RC_HIGH), print_every=0.7)
-elif MAN == "hang":
-    loop(6, "hang", rc_ch(thr=thrM, arm=RC_HIGH, angle=RC_LOW, **MAN_RC), print_every=0.7)
+elif MAN in ("hang", "tvc_hang"):
+    loop(6, MAN, rc_ch(thr=thrM, arm=RC_HIGH, angle=RC_LOW, **MAN_RC), print_every=0.7)
     plant.set_wind(down_ms=3.0)
     loop(4, "gust", rc_ch(thr=thrM, arm=RC_HIGH, angle=RC_LOW, **MAN_RC), print_every=0.7)
     plant.set_wind()
-    loop(8, "hang", rc_ch(thr=thrM, arm=RC_HIGH, angle=RC_LOW, **MAN_RC), print_every=0.7)
+    loop(8, MAN, rc_ch(thr=thrM, arm=RC_HIGH, angle=RC_LOW, **MAN_RC), print_every=0.7)
     # exit transition: drop the target, ANGLE catches it back to level flight
     loop(8, "exit", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
 elif MAN == "inverted":
