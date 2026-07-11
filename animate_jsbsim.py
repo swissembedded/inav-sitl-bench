@@ -257,7 +257,9 @@ def frame(i):
         ln.set_3d_properties([z[i]-pa[2], z[i]-pb[2]])
         ln.set_color(c)
     trail.set_data(y[:i+1], x[:i+1]); trail.set_3d_properties(z[:i+1])
-    txt.set_text(f"t={t[i]:5.1f}s  {ph[i].upper():7s}  roll={math.degrees(rpy[i][0]):+6.0f} deg  alt={z[i]:4.0f} m")
+    txt.set_text(f"t={t[i]:5.1f}s  {ph[i].upper():7s}  "
+                 f"roll={math.degrees(rpy[i][0]):+6.0f}  pitch={math.degrees(rpy[i][1]):+5.0f}  "
+                 f"yaw={math.degrees(rpy[i][2]) % 360.0:3.0f} deg  alt={z[i]:4.0f} m")
     marker.set_xdata([t[i], t[i]])
     markerP.set_xdata([t[i], t[i]])
     markerO.set_xdata([t[i], t[i]])
