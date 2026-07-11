@@ -68,6 +68,9 @@ cs_rud = [float(r.get("rud", 0)) for r in rows]
 sw = {k: [float(r.get(k, 1000)) for r in rows] for k in ("st_arm","st_angle","st_inv","st_sel")}
 cs_thr = [float(r.get("thr", 0)) for r in rows]        # 0..1 throttle driven into the plant
 fc_thr = [float(r.get("fc_thr", r.get("thr", 0))) for r in rows]  # FC's own throttle output
+tvc_p = [float(r.get("tvc_p", 0)) for r in rows]   # vectored nozzle servos
+tvc_y = [float(r.get("tvc_y", 0)) for r in rows]
+HAS_TVC = MAN == "tvc_hang"
 ias = [float(r["ias"]) for r in rows]
 fc_alt = [float(r.get("fc_alt", r["alt"])) for r in rows]  # FC baro-estimated altitude
 # baro is referenced to the boot zero (AGL), truth is MSL -- shift the baro
@@ -151,6 +154,9 @@ axOut.plot(t, cs_ele, "#1f77b4", lw=1.2, label="elevator")
 axOut.plot(t, cs_ail, "#d62728", lw=0.9, label="aileron")
 axOut.plot(t, cs_rud, "#2ca02c", lw=0.9, label="rudder")
 axOut.plot(t, fc_thr, "#ff7f0e", lw=0.9, label="throttle")
+if HAS_TVC:
+    axOut.plot(t, tvc_p, "#9467bd", lw=1.2, label="tvc pitch")
+    axOut.plot(t, tvc_y, "#8c564b", lw=0.9, label="tvc yaw")
 axOut.set_ylim(-1.05, 1.05)
 axOut.set_ylabel("FC out", fontsize=8)
 axOut.set_xlabel("t [s]")
@@ -215,14 +221,19 @@ levers, = axSw.plot([0, 1, 2, 3], [-1, -1, -1, -1], "s", ms=8, color="#d62728")
 
 # 4) controller OUT: FC commands (instant bars)
 axS = panel(PY[3], "controller OUT: FC commands")
-axS.set_xlim(-1.1, 1.1); axS.set_ylim(-0.6, 3.6)
+_out_labels = ["throttle", "rudder", "elevator", "aileron"]
+_out_colors = ["#ff7f0e", "#2ca02c", "#1f77b4", "#d62728"]
+if HAS_TVC:
+    _out_labels += ["tvc yaw", "tvc pitch"]
+    _out_colors += ["#8c564b", "#9467bd"]
+_n_out = len(_out_labels)
+axS.set_xlim(-1.1, 1.1); axS.set_ylim(-0.6, _n_out - 0.4)
 axS.set_yticks([])
-for yy, lbl in enumerate(("throttle", "rudder", "elevator", "aileron")):
+for yy, lbl in enumerate(_out_labels):
     axS.text(-1.05, yy + 0.38, lbl, fontsize=6.5, va="center", color="0.35")
 axS.set_xticks([-1, 0, 1]); axS.set_xticklabels(["-1", "0", "1"], fontsize=6)
 axS.axvline(0, color="0.85", lw=0.7)
-bars = axS.barh([0, 1, 2, 3], [0, 0, 0, 0], height=0.6,
-                color=["#ff7f0e", "#2ca02c", "#1f77b4", "#d62728"])
+bars = axS.barh(list(range(_n_out)), [0] * _n_out, height=0.6, color=_out_colors)
 NOTES = {
     "inverted":    "Inverted flight: rolled 180 deg and held, controller keeps altitude at ~50 kts.",
     "knife_left":  "Knife-edge (left): rolls toward 90 deg, but the airframe has no fuselage lift, so it bleeds speed into a flat spin.",
@@ -253,7 +264,10 @@ def frame(i):
     mtxt.set_text(mode[i])
     dotL.set_data([-1.4 + st_rud[i]], [st_thr[i] * 2 - 1])
     dotR.set_data([1.4 + st_ail[i]], [-st_ele[i]])
-    for b, val in zip(bars, (fc_thr[i], cs_rud[i], cs_ele[i], cs_ail[i])):
+    _vals = [fc_thr[i], cs_rud[i], cs_ele[i], cs_ail[i]]
+    if HAS_TVC:
+        _vals += [tvc_y[i], tvc_p[i]]
+    for b, val in zip(bars, _vals):
         b.set_width(val)
     levers.set_data([0, 1, 2, 3],
                     [max(-1, min(1, (sw[k][i] - 1500) / 500.0))

@@ -86,7 +86,7 @@ plant = JSBSimPlant(model=_model,
 log = open(f"jsbsim_log_{_man}.csv", "w")
 log.write("t,phase,mode,fc_roll,fc_pitch,fc_yaw,js_roll,js_pitch,js_yaw,ias,alt,"
           "ail,ele,rud,thr,fc_thr,st_ail,st_ele,st_thr,st_rud,"
-          "st_arm,st_angle,st_inv,st_sel,fc_alt,x,y\n")
+          "st_arm,st_angle,st_inv,st_sel,fc_alt,tvc_p,tvc_y,x,y\n")
 BOXIDS = read_boxids(m)
 _mode_cache = ["DISARMED", 0.0]     # [last mode string, last poll wall-time]
 _alt_cache = [0.0]                  # last FC-measured altitude
@@ -141,13 +141,15 @@ def loop(secs, phase, rc, thr_override=None, print_every=1.0, freeze=False):
         ele = -r.stab_pitch if FLIP_ELE else r.stab_pitch
         rud = -r.stab_yaw if FLIP_RUD else r.stab_yaw
         thr = thr_override if thr_override is not None else (r.stab_throttle + 1.0) / 2.0
+        _g = tvc_gain(thr)                       # firmware TVC servo commands
+        tvcp = max(-1.0, min(1.0, r.stab_pitch * _g))
+        tvcy = max(-1.0, min(1.0, r.stab_yaw * _g))
         if freeze:
             plant._a_earth = (0.0, 0.0, 0.0)   # static: pure gravity, zero rates
         else:
             plant.set_controls(ail, ele, rud, thr)
             if _man == "tvc_hang":
-                g = tvc_gain(thr)
-                plant.set_tvc(r.stab_pitch * g, r.stab_yaw * g)
+                plant.set_tvc(tvcp, tvcy)
             plant.step(dt=DT)                  # fixed step, paced below
         t_js = time.perf_counter()
         _prof["msp"] += t_msp - it0; _prof["js"] += t_js - t_msp; _prof["n"] += 1
@@ -164,7 +166,7 @@ def loop(secs, phase, rc, thr_override=None, print_every=1.0, freeze=False):
                   f"{jr:.1f},{jp:.1f},{jy:.1f},{plant.ias_kts():.0f},{plant.z:.1f},"
                   f"{ail:.2f},{ele:.2f},{rud:.2f},{thr:.2f},{fc_thr:.2f},"
                   f"{rc[0]},{rc[1]},{rc[2]},{rc[3]},{rc[4]},{rc[5]},{rc[6]},{rc[7]},"
-                  f"{_alt_cache[0]:.1f},{plant.xy()[0]:.1f},{plant.xy()[1]:.1f}\n")
+                  f"{_alt_cache[0]:.1f},{tvcp:.2f},{tvcy:.2f},{plant.xy()[0]:.1f},{plant.xy()[1]:.1f}\n")
         if time.time() - last > print_every:
             print(f"  [{phase:7}] FC {fr:+7.1f}/{fp:+6.1f}/{fy:3.0f} | JS {jr:+7.1f}/{jp:+6.1f}/{jy:5.1f} | "
                   f"IAS {plant.ias_kts():3.0f} alt {plant.z:5.0f} ele {ele:+.2f}")
