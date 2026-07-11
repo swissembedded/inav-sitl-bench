@@ -133,6 +133,7 @@ T0 = time.time()
 DT = 0.001
 _late = [0]        # slots we failed to hold (diagnostic)
 _prof = {"msp": 0.0, "js": 0.0, "n": 0}
+_step_clock = [0.0]   # wall-clock of the last plant step (see loop below)
 
 def loop(secs, phase, rc, thr_override=None, print_every=1.0, freeze=False):
     """freeze=True: hold the plant motionless (clean static IC while the FC
@@ -155,11 +156,24 @@ def loop(secs, phase, rc, thr_override=None, print_every=1.0, freeze=False):
         tvcy = max(-1.0, min(1.0, r.stab_yaw * _g))
         if freeze:
             plant._a_earth = (0.0, 0.0, 0.0)   # static: pure gravity, zero rates
+            _step_clock[0] = time.perf_counter()
         else:
             plant.set_controls(ail, ele, rud, thr)
             if _man == "tvc_hang":
                 plant.set_tvc(tvcp, tvcy)
-            plant.step(dt=DT)                  # fixed step, paced below
+            # WALL-CLOCK stepping, not a fixed DT: the FC's AHRS runs on its
+            # own real-time clock and keeps integrating the LAST injected
+            # gyro through any slot overrun. A fixed-step plant freezes in
+            # that gap and the estimate runs 20+ deg ahead of the truth
+            # during a fast entry - the aircraft then creeps to the real
+            # attitude at the slow acc-correction rate (~2 deg/s, seen as
+            # 156 -> 180 over 16 s). Stepping the plant by the measured
+            # elapsed time keeps both integrations consistent; rates change
+            # little within a gap, so the residual error is second order.
+            _now = time.perf_counter()
+            _dt = min(max(_now - _step_clock[0], 0.0005), 0.05)
+            _step_clock[0] = _now
+            plant.step(dt=_dt)
         t_js = time.perf_counter()
         _prof["msp"] += t_msp - it0; _prof["js"] += t_js - t_msp; _prof["n"] += 1
         jr, jp, jy = plant.rpy()
