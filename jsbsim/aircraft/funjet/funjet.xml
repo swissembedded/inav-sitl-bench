@@ -71,7 +71,8 @@
 
   <flight_control name="FCS">
     <property value="0.0"> fcs/throttle-cmd-norm </property>
-    <!-- vectored nozzle deflection, normalized -1..1 (~20 deg full) -->
+    <!-- vectored nozzle deflection, normalized -1..1 (15 deg full,
+         matches the real motor mount) -->
     <property value="0.0"> fcs/tvc-pitch-norm </property>
     <property value="0.0"> fcs/tvc-yaw-norm </property>
     <channel name="Roll">
@@ -207,14 +208,15 @@
         </product>
       </function>
       <function name="aero/moment/Pitch_tvc">
-        <description>Vectored nozzle: tau = T * lever * sin(20 deg * norm);
-          2.6 lb * 1.15 ft * 0.34 ~ 1.0 lb-ft at full throttle+deflection.
+        <description>Vectored nozzle: tau = T * lever * sin(15 deg * norm);
+          2.6 lb * 1.15 ft * 0.259 ~ 0.77 lb-ft at full throttle+deflection
+          (15 deg = the real motor mount's travel).
           Positive deflection = nose up. Works at zero airspeed - at hover
           this is the ONLY pitch authority (pusher, no wash over surfaces).</description>
         <product>
           <property>fcs/throttle-cmd-norm</property>
           <property>fcs/tvc-pitch-norm</property>
-          <value> 1.0 </value>
+          <value> 0.77 </value>
         </product>
       </function>
     </axis>
@@ -238,7 +240,7 @@
         <product>
           <property>fcs/throttle-cmd-norm</property>
           <property>fcs/tvc-yaw-norm</property>
-          <value> 1.0 </value>
+          <value> 0.77 </value>
         </product>
       </function>
     </axis>
