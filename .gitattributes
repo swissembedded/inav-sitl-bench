@@ -1,0 +1,3 @@
+# binary assets: never let line-ending conversion near these
+*.mp4 binary
+*.png binary
