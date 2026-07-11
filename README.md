@@ -66,6 +66,56 @@ python bench.py scenarios   # all orientation targets + ANGLE bailout
   WAIT_ALT 40 m -> Immelmann (half loop + half roll) -> hold; gate must be
   respected, ends upright holding the gained altitude
 
+## Parallel test rig (Docker, many-core host)
+
+The gust battery (`gust_matrix.py`) and parameter sweeps run maneuvers in
+PARALLEL on a many-core Linux box: one THROWAWAY container per maneuver,
+each with its own freshly started SITL process. That gives the mandatory
+SITL restart per maneuver by construction (SITL keeps state between runs;
+an AHRS parked at 180 deg needs longer than any settle phase to recover)
+and full isolation between concurrent runs. A five-maneuver matrix takes
+~3.5 min wall clock instead of ~13 sequential.
+
+Setup (once):
+
+    # base image: toolchain + python with the plant
+    cat > Dockerfile <<'EOF'
+    FROM ubuntu:24.04
+    RUN apt-get update && apt-get install -y --no-install-recommends \
+        cmake ninja-build gcc g++ git ruby python3 python3-pip \
+        ca-certificates && rm -rf /var/lib/apt/lists/*
+    RUN pip3 install --break-system-packages jsbsim numpy
+    EOF
+    docker build -t inav-bench .
+
+    # SITL built ONCE into the mounted source tree, shared by all containers
+    docker run --rm -v $PWD/inav:/src inav-bench bash -c \
+        'mkdir -p /src/build_sitl && cd /src/build_sitl && \
+         cmake -G Ninja -DSITL=ON .. && ninja'
+
+    # provisioned eeprom.bin: run `bench.py provision` once against a local
+    # SITL and copy fcdata/eeprom.bin next to the runner script
+
+Per maneuver (what `run_matrix.sh` launches in parallel):
+
+    mkdir -p work/$MAN && cp eeprom.bin work/$MAN/
+    docker run --rm -v $PWD/inav:/src -v $PWD/inav-sitl-bench:/bench:ro \
+        -v $PWD/work/$MAN:/work inav-bench bash -c "
+        cd /work && /src/build_sitl/bin/SITL.elf >/dev/null 2>&1 &
+        sleep 2
+        cp -r /bench /tmp/bench && cd /tmp/bench
+        python3 gust_matrix.py $MAN --no-restart > /work/result.txt 2>&1
+        cp -f gust_log.csv /work/"
+
+Key points: the SITL working directory is the per-maneuver /work volume
+(its own eeprom copy - concurrent SITLs must not share config state); the
+bench repo mounts read-only and is copied inside so runs cannot poison
+each other's logs; results land in work/<maneuver>/. Parameter sweeps use
+the same pattern with `--set name=value` per container (e.g. four
+tvc_gain values side by side). Replay-video rendering parallelises the
+same way with an extended image (`pip3 install matplotlib imageio-ffmpeg`),
+one container per video over the uploaded flight logs.
+
 ## Gotcha 7 (cost a full debug loop)
 
 The plant's nose-in-earth mapping must be the INVERSE of the (FC-validated)

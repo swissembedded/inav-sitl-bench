@@ -277,5 +277,6 @@ def frame(i):
 anim = FuncAnimation(fig, frame, frames=len(rows), interval=60, blit=False)
 outdir = "docs/videos"; os.makedirs(outdir, exist_ok=True)
 outpath = f"{outdir}/jsbsim_{MAN}.mp4"
-anim.save(outpath, writer=FFMpegWriter(fps=10, bitrate=1800), dpi=100)
+anim.save(outpath, writer=FFMpegWriter(fps=10, bitrate=1800,
+                                       extra_args=["-movflags", "+faststart"]), dpi=100)
 print("written", outpath, len(rows), "frames")
