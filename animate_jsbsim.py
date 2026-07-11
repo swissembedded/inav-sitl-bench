@@ -86,7 +86,6 @@ def R_ned(roll, pitch, yaw):
     Rx = np.array([[1, 0, 0], [0, cr, -sr], [0, sr, cr]])
     return Rz @ Ry @ Rx
 
-S = 35.0   # aircraft symbol scale [m]
 SEGS = [((-0.6, 0, 0), (1.0, 0, 0)),          # fuselage
         ((0.1, -1.0, 0), (0.1, 1.0, 0)),      # wing
         ((-0.6, -0.35, 0), (-0.6, 0.35, 0)),  # tailplane
@@ -161,11 +160,15 @@ marker = axRoll.axvline(t[0], color="k", lw=1.5)
 markerP = axPit.axvline(t[0], color="k", lw=1.5)
 markerO = axOut.axvline(t[0], color="k", lw=1.5)
 ax.set_xlabel("east [m]"); ax.set_ylabel("north [m]"); ax.set_zlabel("alt [m]")
-# chase camera: fixed-size isotropic cube around the aircraft, so the 3D box
-# is the same size in every video regardless of track length (a 2 km
-# floor-dive run otherwise squashes the view into an unreadable sliver)
-W = 150.0
+# fixed isotropic cube around the WHOLE track: the full flight path stays
+# visible, the box has the same shape in every video, and nothing is
+# squashed. The aircraft symbol scales with the track so it stays visible.
+_cx, _cy, _cz = (min(y)+max(y))/2, (min(x)+max(x))/2, (min(z)+max(z))/2
+L = max(max(y)-min(y), max(x)-min(x), max(z)-min(z)) / 2 + 60
+_z0 = max(0.0, _cz - L)   # never show below ground
+ax.set_xlim(_cx-L, _cx+L); ax.set_ylim(_cy-L, _cy+L); ax.set_zlim(_z0, _z0 + 2*L)
 ax.set_box_aspect((1, 1, 1))
+S = max(25.0, L / 5.0)   # aircraft symbol scale, relative to the scene
 trail, = ax.plot([], [], [], color="0.6", lw=1.2)
 seg_lines = [ax.plot([], [], [], lw=2.5)[0] for _ in SEGS]
 txt = ax.text2D(0.02, 0.95, "", transform=ax.transAxes, fontsize=10)
@@ -242,7 +245,6 @@ def frame(i):
         ln.set_3d_properties([z[i]-pa[2], z[i]-pb[2]])
         ln.set_color(c)
     trail.set_data(y[:i+1], x[:i+1]); trail.set_3d_properties(z[:i+1])
-    ax.set_xlim(y[i]-W, y[i]+W); ax.set_ylim(x[i]-W, x[i]+W); ax.set_zlim(z[i]-W, z[i]+W)
     txt.set_text(f"t={t[i]:5.1f}s  {ph[i].upper():7s}  roll={math.degrees(rpy[i][0]):+6.0f} deg  alt={z[i]:4.0f} m")
     marker.set_xdata([t[i], t[i]])
     markerP.set_xdata([t[i], t[i]])
