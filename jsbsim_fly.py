@@ -278,6 +278,16 @@ else:
 
 fr, fp, fy = fc_att(m); jr, jp, jy = plant.rpy()
 print(f"FINAL: FC roll {fr:+.1f}  JS roll {jr:+.1f}  (Erfolg wenn |roll| ~ 180)")
+# FC-vs-truth divergence: a corrupted AHRS (sustained spin rotation) can
+# report level while the plane spirals into the ground -- checking only
+# the FC's own attitude waves that through. Compare the tilt of both.
+def _up(r, p):
+    r, p = math.radians(r), math.radians(p)
+    return (-math.sin(p), math.sin(r) * math.cos(p), math.cos(r) * math.cos(p))
+_uf, _uj = _up(fr, fp), _up(jr, jp)
+_div = math.degrees(math.acos(max(-1.0, min(1.0, sum(a * b for a, b in zip(_uf, _uj))))))
+print(f"FINAL: FC-vs-truth tilt divergence {_div:.1f} deg"
+      + ("  << AHRS DIVERGED, estimate not trustworthy" if _div > 15 else ""))
 if _prof["n"]:
     print(f"timing: {_late[0]} slots overran >5ms | per cycle: "
           f"msp {1000*_prof['msp']/_prof['n']:.1f} ms, jsbsim {1000*_prof['js']/_prof['n']:.1f} ms "
