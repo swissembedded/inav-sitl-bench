@@ -91,6 +91,14 @@ BOXIDS = read_boxids(m)
 _mode_cache = ["DISARMED", 0.0]     # [last mode string, last poll wall-time]
 _alt_cache = [0.0]                  # last FC-measured altitude
 _gps_cache = [0, 0]                 # [fixType, numSat] from MSP_RAW_GPS
+_div_max = [0.0, 0.0, ""]           # [max FC-vs-truth tilt divergence, time, phase]
+
+def _tilt_div_deg(fr, fp, jr, jp):
+    def up(r, p):
+        r, p = math.radians(r), math.radians(p)
+        return (-math.sin(p), math.sin(r) * math.cos(p), math.cos(r) * math.cos(p))
+    a, b = up(fr, fp), up(jr, jp)
+    return math.degrees(math.acos(max(-1.0, min(1.0, sum(x * y for x, y in zip(a, b))))))
 PARAMS = ["fig_roll_rate", "fig_loop_rate", "fig_assist_z_gain", "fig_assist_vz_gain",
           "fig_assist_max", "ohold_inverted_pitch_trim", "ohold_knife_left_pitch_trim",
           "ohold_knife_right_pitch_trim", "ohold_hover_thr_p", "ohold_hover_thr_i",
@@ -165,6 +173,14 @@ def loop(secs, phase, rc, thr_override=None, print_every=1.0, freeze=False):
                 _gps_cache[0], _gps_cache[1] = _g[0], _g[1]
             except Exception:
                 pass
+            # track the WORST FC-vs-truth divergence, not just the final one:
+            # a mid-flight AHRS offset (seen at 10 deg during an inverted
+            # hold) is invisible in an end-of-flight check. Skip the frozen
+            # settle/cal phases, the AHRS is converging there by design.
+            if phase not in ("settle", "cal", "armL", "armH"):
+                _d = _tilt_div_deg(fr, fp, jr, jp)
+                if _d > _div_max[0]:
+                    _div_max[0], _div_max[1], _div_max[2] = _d, t, phase
             _mode_cache[1] = t
         mode = _mode_cache[0]
         fc_thr = (r.stab_throttle + 1.0) / 2.0   # FC's own throttle output, even when overridden
@@ -220,6 +236,7 @@ loop(6, "level", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH))   # 1450 = level t
 MAN = next((a for a in sys.argv[1:] if not a.startswith("--")), "inverted")
 MAN_RC = {   # SEL detents: 1270 INVERT / 1510 KN L / 1750 KN R / 1985 HANG
     "inverted":    dict(sel=1270),
+    "inverted_stick": dict(sel=1270),   # stick-offset carving around inverted
     "knife_left":  dict(sel=1510),
     "knife_right": dict(sel=1750),
     "hang":        dict(sel=1985),
@@ -263,6 +280,15 @@ elif MAN in ("hang", "tvc_hang"):
     loop(8, MAN, rc_ch(thr=thrM, arm=RC_HIGH, angle=RC_LOW, **MAN_RC), print_every=0.7)
     # exit transition: drop the target, ANGLE catches it back to level flight
     loop(8, "exit", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
+elif MAN == "inverted_stick":
+    # ANGLE-semantics stick offsets: half aileron must carve a HELD angle
+    # offset from the inverted reference (not a rate), releasing returns
+    # the target gently; then the same on the elevator
+    loop(8, "inverted", rc_ch(thr=thrM, arm=RC_HIGH, angle=RC_LOW, **MAN_RC), print_every=0.7)
+    loop(4, "stick-roll", rc_ch(thr=thrM, arm=RC_HIGH, angle=RC_LOW, ail=1750, **MAN_RC), print_every=0.7)
+    loop(4, "release", rc_ch(thr=thrM, arm=RC_HIGH, angle=RC_LOW, **MAN_RC), print_every=0.7)
+    loop(4, "stick-pitch", rc_ch(thr=thrM, arm=RC_HIGH, angle=RC_LOW, ele=1250, **MAN_RC), print_every=0.7)
+    loop(4, "release", rc_ch(thr=thrM, arm=RC_HIGH, angle=RC_LOW, **MAN_RC), print_every=0.7)
 elif MAN == "inverted":
     # settle the hold straight first; the deliberate inverted turn comes
     # only once the hold is stable (pilot rudder, visible on the stick)
@@ -295,6 +321,8 @@ _uf, _uj = _up(fr, fp), _up(jr, jp)
 _div = math.degrees(math.acos(max(-1.0, min(1.0, sum(a * b for a, b in zip(_uf, _uj))))))
 print(f"FINAL: FC-vs-truth tilt divergence {_div:.1f} deg"
       + ("  << AHRS DIVERGED, estimate not trustworthy" if _div > 15 else ""))
+print(f"FINAL: worst divergence {_div_max[0]:.1f} deg at t={_div_max[1]:.1f}s ({_div_max[2]})"
+      + ("  << AHRS excursion mid-flight" if _div_max[0] > 15 else ""))
 if _prof["n"]:
     print(f"timing: {_late[0]} slots overran >5ms | per cycle: "
           f"msp {1000*_prof['msp']/_prof['n']:.1f} ms, jsbsim {1000*_prof['js']/_prof['n']:.1f} ms "
