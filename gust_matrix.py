@@ -66,12 +66,15 @@ ALT_MAX_M = 10.0      # worst allowed altitude excursion (hang: +50 %)
 SETTLE_TOL_DEG = 8.0  # hold counts as captured below this error
 BASELINE_S = 1.0      # pre-gust averaging window
 
-# maneuver -> (SEL detent, throttle, target roll/pitch)
+# maneuver -> (SEL detent, throttle, target roll/pitch, airframe)
+# tvc_hang: prop hang on the TVC pusher delta - elevons are dead at hover,
+# all authority comes from the vectored nozzle
 HOLDS = {
-    "inverted":    (1270, 1650, (180.0, 0.0)),
-    "knife_left":  (1510, 1650, (-90.0, 0.0)),
-    "knife_right": (1750, 1650, (90.0, 0.0)),
-    "hang":        (1985, 1500, (0.0, 90.0)),
+    "inverted":    (1270, 1650, (180.0, 0.0), "aerobat3d"),
+    "knife_left":  (1510, 1650, (-90.0, 0.0), "aerobat3d"),
+    "knife_right": (1750, 1650, (90.0, 0.0), "aerobat3d"),
+    "hang":        (1985, 1500, (0.0, 90.0), "aerobat3d"),
+    "tvc_hang":    (1985, 1500, (0.0, 90.0), "funjet"),
 }
 
 # push direction -> unit vector (along, right, down) in the entry-track frame
@@ -132,11 +135,12 @@ def tilt_between(rp_a, rp_b):
 class Runner:
     """Minimal fixed-slot HITL coupling (no video logging, no stick show)."""
 
-    def __init__(self, msp, plant, log_rows, maneuver):
+    def __init__(self, msp, plant, log_rows, maneuver, tvc_gain=None):
         self.m = msp
         self.plant = plant
         self.rows = log_rows
         self.man = maneuver
+        self.tvc_gain = tvc_gain     # callable thr01 -> gain, None = no TVC
         self.t0 = time.time()
 
     def fly(self, secs, rc, phase, freeze=False, thr_override=None):
@@ -145,12 +149,18 @@ class Runner:
             it0 = time.perf_counter()
             r = sim_step(self.m, self.plant.acc_mg(), self.plant.gyro_dps16(),
                          rc, baro_pa=self.plant.baro_pa())
-            ail, ele, rud = r.stab_roll, -r.stab_pitch, r.stab_yaw   # aerobat3d: flip-ele
+            ail, ele, rud = r.stab_roll, -r.stab_pitch, r.stab_yaw   # flip-ele convention
             thr = thr_override if thr_override is not None else (r.stab_throttle + 1.0) / 2.0
             if freeze:
                 self.plant._a_earth = (0.0, 0.0, 0.0)
             else:
                 self.plant.set_controls(ail, ele, rud, thr)
+                if self.tvc_gain is not None:
+                    # replicate the firmware's servo-mixer TVC inputs
+                    # (INPUT_TVC_* = stabilized * thrustVectoringGain)
+                    g = self.tvc_gain(thr)
+                    self.plant.set_tvc(max(-1.0, min(1.0, r.stab_pitch * g)),
+                                       max(-1.0, min(1.0, r.stab_yaw * g)))
                 self.plant.step(dt=DT)
             jr, jp, jy = self.plant.rpy()
             self.rows.append((time.time() - self.t0, self.man, phase,
@@ -172,13 +182,26 @@ def restart_container(name="inav-sitl"):
 
 
 def run_maneuver(man, gust_ms, do_restart, sets=()):
-    sel, thr_hold, target_rp = HOLDS[man]
+    sel, thr_hold, target_rp, model = HOLDS[man]
     if do_restart:
         restart_container()
     m = MspClient()
-    plant = JSBSimPlant(model="aerobat3d", alt_ft=394)
+    plant = JSBSimPlant(model=model, alt_ft=394)
     rows = []
-    run = Runner(m, plant, rows, man)
+
+    tvc = None
+    if model == "funjet":
+        def _u(name, default):
+            try:
+                return int.from_bytes(m.request(0x1003, name.encode() + b"\x00"), "little")
+            except Exception:
+                return default
+        gain = _u("tvc_gain", 100) / 100.0
+        comp = _u("tvc_thrust_comp", 100) / 100.0
+        def tvc(thr01):
+            t = min(max(thr01, 0.25), 1.0)      # TVC_THRUST_COMP_FLOOR
+            return gain * (1.0 + (1.0 / t - 1.0) * comp)
+    run = Runner(m, plant, rows, man, tvc_gain=tvc)
 
     wait_boot_calibration(m)
     for name, value in sets:
@@ -299,7 +322,7 @@ def run_maneuver(man, gust_ms, do_restart, sets=()):
             aborted = True
             flush_rows()
             continue
-        alt_limit = ALT_MAX_M * (1.5 if man == "hang" else 1.0)
+        alt_limit = ALT_MAX_M * (1.5 if man in ("hang", "tvc_hang") else 1.0)
         ok = (tilt_max < TILT_MAX_DEG and t_rec is not None
               and t_rec < REC_MAX_S and dalt_max < alt_limit)
         results.append((man, dname, tilt_max, t_rec, dalt_max, ok))
