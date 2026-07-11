@@ -39,6 +39,10 @@ y   = [float(r["y"]) for r in rows]      # east
 z   = [float(r["alt"]) for r in rows]
 rpy = [(math.radians(float(r["js_roll"])), math.radians(float(r["js_pitch"])),
         math.radians(float(r["js_yaw"]))) for r in rows]
+# GPS status (fix type, sats) -- older logs lack the columns
+_FIX = {0: "no fix", 1: "GPS", 2: "GPS 2D", 3: "GPS 3D"}
+gps = [(_FIX.get(int(r.get("gps_fix", 0) or 0), "?"), int(r.get("gps_sat", 0) or 0))
+       for r in rows] if "gps_fix" in rows[0] else None
 # truth (JSBSim) vs FC estimate, in degrees -- the validation pair:
 # solid = physical truth (out of the plant), dashed = what the FC believes (in).
 # Roll is UNWRAPPED: +180 and -180 are the same attitude, so a plane sitting
@@ -257,9 +261,12 @@ def frame(i):
         ln.set_3d_properties([z[i]-pa[2], z[i]-pb[2]])
         ln.set_color(c)
     trail.set_data(y[:i+1], x[:i+1]); trail.set_3d_properties(z[:i+1])
+    gtxt = ""
+    if gps is not None:
+        gtxt = f"  {gps[i][0]}" + (f" {gps[i][1]}sat" if gps[i][1] else "")
     txt.set_text(f"t={t[i]:5.1f}s  {ph[i].upper():7s}  "
                  f"roll={math.degrees(rpy[i][0]):+6.0f}  pitch={math.degrees(rpy[i][1]):+5.0f}  "
-                 f"yaw={math.degrees(rpy[i][2]) % 360.0:3.0f} deg  alt={z[i]:4.0f} m")
+                 f"yaw={math.degrees(rpy[i][2]) % 360.0:3.0f} deg  alt={z[i]:4.0f} m{gtxt}")
     marker.set_xdata([t[i], t[i]])
     markerP.set_xdata([t[i], t[i]])
     markerO.set_xdata([t[i], t[i]])

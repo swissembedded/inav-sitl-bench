@@ -86,10 +86,11 @@ plant = JSBSimPlant(model=_model,
 log = open(f"jsbsim_log_{_man}.csv", "w")
 log.write("t,phase,mode,fc_roll,fc_pitch,fc_yaw,js_roll,js_pitch,js_yaw,ias,alt,"
           "ail,ele,rud,thr,fc_thr,st_ail,st_ele,st_thr,st_rud,"
-          "st_arm,st_angle,st_inv,st_sel,fc_alt,tvc_p,tvc_y,x,y\n")
+          "st_arm,st_angle,st_inv,st_sel,fc_alt,tvc_p,tvc_y,x,y,gps_fix,gps_sat\n")
 BOXIDS = read_boxids(m)
 _mode_cache = ["DISARMED", 0.0]     # [last mode string, last poll wall-time]
 _alt_cache = [0.0]                  # last FC-measured altitude
+_gps_cache = [0, 0]                 # [fixType, numSat] from MSP_RAW_GPS
 PARAMS = ["fig_roll_rate", "fig_loop_rate", "fig_assist_z_gain", "fig_assist_vz_gain",
           "fig_assist_max", "ohold_inverted_pitch_trim", "ohold_knife_left_pitch_trim",
           "ohold_knife_right_pitch_trim", "ohold_hover_thr_p", "ohold_hover_thr_i",
@@ -156,9 +157,14 @@ def loop(secs, phase, rc, thr_override=None, print_every=1.0, freeze=False):
         jr, jp, jy = plant.rpy()
         fr, fp, fy = r.att_roll_deg, r.att_pitch_deg, r.att_yaw_deg   # aus der Reply -- keine Extra-Roundtrips
         t = time.time() - T0
-        if t - _mode_cache[1] > 0.1:             # poll real FC mode + baro alt at ~10 Hz
+        if t - _mode_cache[1] > 0.1:             # poll real FC mode + baro alt + GPS at ~10 Hz
             _mode_cache[0] = fc_mode(m, BOXIDS)
             _alt_cache[0] = fc_alt_m(m)
+            try:                                 # MSP_RAW_GPS: fixType u8, numSat u8
+                _g = m.request(106)
+                _gps_cache[0], _gps_cache[1] = _g[0], _g[1]
+            except Exception:
+                pass
             _mode_cache[1] = t
         mode = _mode_cache[0]
         fc_thr = (r.stab_throttle + 1.0) / 2.0   # FC's own throttle output, even when overridden
@@ -166,7 +172,8 @@ def loop(secs, phase, rc, thr_override=None, print_every=1.0, freeze=False):
                   f"{jr:.1f},{jp:.1f},{jy:.1f},{plant.ias_kts():.0f},{plant.z:.1f},"
                   f"{ail:.2f},{ele:.2f},{rud:.2f},{thr:.2f},{fc_thr:.2f},"
                   f"{rc[0]},{rc[1]},{rc[2]},{rc[3]},{rc[4]},{rc[5]},{rc[6]},{rc[7]},"
-                  f"{_alt_cache[0]:.1f},{tvcp:.2f},{tvcy:.2f},{plant.xy()[0]:.1f},{plant.xy()[1]:.1f}\n")
+                  f"{_alt_cache[0]:.1f},{tvcp:.2f},{tvcy:.2f},{plant.xy()[0]:.1f},{plant.xy()[1]:.1f},"
+                  f"{_gps_cache[0]},{_gps_cache[1]}\n")
         if time.time() - last > print_every:
             print(f"  [{phase:7}] FC {fr:+7.1f}/{fp:+6.1f}/{fy:3.0f} | JS {jr:+7.1f}/{jp:+6.1f}/{jy:5.1f} | "
                   f"IAS {plant.ias_kts():3.0f} alt {plant.z:5.0f} ele {ele:+.2f}")
