@@ -35,7 +35,11 @@ The SITL container is restarted before every maneuver (SITL keeps state;
 an AHRS parked at 180 deg needs longer than any settle phase to recover).
 
 Usage:  python gust_matrix.py [inverted knife_left ...] [--gust 3.0]
-                              [--no-restart]
+                              [--no-restart] [--set name=value ...]
+
+--set writes a firmware setting (live, after boot) before the battery,
+e.g. --set ohold_hover_thr_min=1400 for a hover authority floor sweep.
+The value size is taken from the FC's own SETTING_INFO reply.
 """
 import csv
 import math
@@ -166,7 +170,7 @@ def restart_container(name="inav-sitl"):
     time.sleep(3)
 
 
-def run_maneuver(man, gust_ms, do_restart):
+def run_maneuver(man, gust_ms, do_restart, sets=()):
     sel, thr_hold, target_rp = HOLDS[man]
     if do_restart:
         restart_container()
@@ -176,6 +180,10 @@ def run_maneuver(man, gust_ms, do_restart):
     run = Runner(m, plant, rows, man)
 
     wait_boot_calibration(m)
+    for name, value in sets:
+        size = len(m.request(0x1003, name.encode() + b"\x00"))
+        m.set_setting(name, int(value).to_bytes(size, "little", signed=value < 0))
+        print(f"  set {name} = {value} ({size} bytes)")
     run.fly(6, rc_ch(), "settle", freeze=True)
     t0 = time.time()
     while (arming_flags(m) & FLAG_CAL) and time.time() - t0 < 25:
@@ -311,7 +319,13 @@ def main():
     if "--gust" in sys.argv:
         gust_ms = float(sys.argv[sys.argv.index("--gust") + 1])
     do_restart = "--no-restart" not in sys.argv
-    mans = [a for a in sys.argv[1:] if a in HOLDS] or list(HOLDS)
+    sets = []
+    argv = sys.argv[1:]
+    for i, a in enumerate(argv):
+        if a == "--set" and i + 1 < len(argv) and "=" in argv[i + 1]:
+            name, val = argv[i + 1].split("=", 1)
+            sets.append((name, int(val)))
+    mans = [a for a in argv if a in HOLDS] or list(HOLDS)
 
     with open("gust_log.csv", "w", newline="") as f:
         csv.writer(f).writerow(["t", "maneuver", "phase", "js_roll",
@@ -320,7 +334,7 @@ def main():
     all_results = []
     for man in mans:
         print(f"=== {man} (gust {gust_ms} m/s) ===")
-        res = run_maneuver(man, gust_ms, do_restart)
+        res = run_maneuver(man, gust_ms, do_restart, sets)
         if res:
             all_results.extend(res)
 
