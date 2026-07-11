@@ -25,6 +25,10 @@ from jsbsim_plant import JSBSimPlant
 FLIP_ELE = "--flip-ele" in sys.argv
 FLIP_AIL = "--flip-ail" in sys.argv
 FLIP_RUD = "--flip-rud" in sys.argv
+# SITL started with --lockstep: every frame advances the FC clock exactly
+# 1 ms, so the plant steps a fixed DT and no slot pacing is needed (the MSP
+# roundtrip serializes the frames; the run may be faster than real time)
+LOCKSTEP = "--lockstep" in sys.argv
 
 RC_LOW, RC_MID, RC_HIGH = 1000, 1500, 2000
 # channels: A E T R ARM ANGLE INVERT SELECT  (bench provisioning layout)
@@ -135,12 +139,17 @@ _late = [0]        # slots we failed to hold (diagnostic)
 _prof = {"msp": 0.0, "js": 0.0, "n": 0}
 _step_clock = [0.0]   # wall-clock of the last plant step (see loop below)
 
+_frames = [0]      # injected frames = sim time in ms (lockstep time base)
+
 def loop(secs, phase, rc, thr_override=None, print_every=1.0, freeze=False):
     """freeze=True: hold the plant motionless (clean static IC while the FC
     settles/calibrates/arms disarmed) -- sensors still stream."""
     last = 0.0
     t0 = time.time()
-    while time.time() - t0 < secs:
+    f0 = _frames[0]
+    # lockstep: phase durations count SIM time (frames), the run may be
+    # faster or slower than the wall clock
+    while (_frames[0] - f0 < secs / DT) if LOCKSTEP else (time.time() - t0 < secs):
         it0 = time.perf_counter()
         # NOTE: no GPS injection for now. Injecting our GPS (even only while
         # upright) biases the AHRS pitch via the COG/vel fusion -- revisit
@@ -161,24 +170,31 @@ def loop(secs, phase, rc, thr_override=None, print_every=1.0, freeze=False):
             plant.set_controls(ail, ele, rud, thr)
             if _man == "tvc_hang":
                 plant.set_tvc(tvcp, tvcy)
-            # WALL-CLOCK stepping, not a fixed DT: the FC's AHRS runs on its
-            # own real-time clock and keeps integrating the LAST injected
-            # gyro through any slot overrun. A fixed-step plant freezes in
-            # that gap and the estimate runs 20+ deg ahead of the truth
-            # during a fast entry - the aircraft then creeps to the real
-            # attitude at the slow acc-correction rate (~2 deg/s, seen as
-            # 156 -> 180 over 16 s). Stepping the plant by the measured
-            # elapsed time keeps both integrations consistent; rates change
-            # little within a gap, so the residual error is second order.
-            _now = time.perf_counter()
-            _dt = min(max(_now - _step_clock[0], 0.0005), 0.05)
-            _step_clock[0] = _now
-            plant.step(dt=_dt)
+            if LOCKSTEP:
+                # the FC clock advances exactly DT per frame - fixed step,
+                # perfectly equidistant, host load cannot matter
+                plant.step(dt=DT)
+            else:
+                # WALL-CLOCK stepping, not a fixed DT: the FC's AHRS runs on
+                # its own real-time clock and keeps integrating the LAST
+                # injected gyro through any slot overrun. A fixed-step plant
+                # freezes in that gap and the estimate runs 20+ deg ahead of
+                # the truth during a fast entry - the aircraft then creeps to
+                # the real attitude at the slow acc-correction rate (~2 deg/s,
+                # seen as 156 -> 180 over 16 s). Stepping the plant by the
+                # measured elapsed time keeps both integrations consistent;
+                # rates change little within a gap, so the residual error is
+                # second order.
+                _now = time.perf_counter()
+                _dt = min(max(_now - _step_clock[0], 0.0005), 0.05)
+                _step_clock[0] = _now
+                plant.step(dt=_dt)
         t_js = time.perf_counter()
         _prof["msp"] += t_msp - it0; _prof["js"] += t_js - t_msp; _prof["n"] += 1
         jr, jp, jy = plant.rpy()
         fr, fp, fy = r.att_roll_deg, r.att_pitch_deg, r.att_yaw_deg   # aus der Reply -- keine Extra-Roundtrips
-        t = time.time() - T0
+        _frames[0] += 1
+        t = _frames[0] * DT if LOCKSTEP else time.time() - T0
         if t - _mode_cache[1] > 0.1:             # poll real FC mode + baro alt + GPS at ~10 Hz
             _mode_cache[0] = fc_mode(m, BOXIDS)
             _alt_cache[0] = fc_alt_m(m)
@@ -209,15 +225,17 @@ def loop(secs, phase, rc, thr_override=None, print_every=1.0, freeze=False):
                   f"IAS {plant.ias_kts():3.0f} alt {plant.z:5.0f} ele {ele:+.2f}")
             last = time.time()
         # hold the fixed slot: coarse sleep, then spin the last ~2 ms
-        # (Windows sleep granularity would otherwise blow the slot)
-        while True:
-            rem = DT - (time.perf_counter() - it0)
-            if rem <= 0:
-                break
-            if rem > 0.002:
-                time.sleep(rem - 0.002)
-        if -(DT - (time.perf_counter() - it0)) > 0.005:
-            _late[0] += 1                        # slot overran by >5 ms
+        # (Windows sleep granularity would otherwise blow the slot).
+        # Lockstep needs no pacing: the FC clock only moves with our frames.
+        if not LOCKSTEP:
+            while True:
+                rem = DT - (time.perf_counter() - it0)
+                if rem <= 0:
+                    break
+                if rem > 0.002:
+                    time.sleep(rem - 0.002)
+            if -(DT - (time.perf_counter() - it0)) > 0.005:
+                _late[0] += 1                    # slot overran by >5 ms
 
 print("boot-cal abwarten (bench-Routine)...")
 from bench import wait_boot_calibration
