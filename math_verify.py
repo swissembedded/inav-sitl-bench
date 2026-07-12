@@ -327,5 +327,57 @@ for _ in range(N // 4):
         break
 check("G4 q_yaw(psi) (x) TargetFromRP(r,p) == rpy(r,p,psi) (anchor composition)", ok)
 
+# H. Generalized spin command: body rates along the earth-vertical (expressed
+#    in the body frame) rotate purely about the vertical and leave the tilt
+#    (reduced attitude error) untouched - in ANY held attitude. This is the
+#    basis of the generalized FLAT SPIN (flat / inverted / knife / hang).
+def integrate_body_rate(q, omega_body_rad, dt, steps):
+    # body-frame rate composes on the right: q_{k+1} = q_k (x) dq(omega*dt)
+    for _ in range(steps):
+        q = inav_mul(q, quat_from_rotvec(np.array(omega_body_rad) * dt))
+        q = q / np.linalg.norm(q)
+    return q
+
+
+ok_tilt = True
+ok_axis = True
+for _ in range(N // 8):
+    q0 = inav_rpy_to_quat(*rng.uniform(-170, 170, 3))
+    u0 = inav_rotate([0, 0, 1], q0)                 # earth-up in body frame
+    k = np.radians(rng.uniform(60, 400)) * rng.choice([-1, 1])
+    q1 = integrate_body_rate(q0, k * u0, 0.001, 500)  # 0.5 s of spin
+    # H1: the tilt did not move (up vector in body frame unchanged)
+    u1 = inav_rotate([0, 0, 1], q1)
+    if np.degrees(np.arccos(np.clip(np.dot(u0, u1), -1, 1))) > 0.01:
+        ok_tilt = False
+        break
+    # H2: the rotation really happened, about the EARTH vertical: the
+    # horizontal projection of body-x turned by k*t about earth-z
+    e0 = scipy_q(q0).apply([1, 0, 0])               # body-x in earth frame
+    e1 = scipy_q(q1).apply([1, 0, 0])
+    h0 = e0.copy(); h0[2] = 0
+    h1 = e1.copy(); h1[2] = 0
+    if np.linalg.norm(h0) > 0.1 and np.linalg.norm(h1) > 0.1:
+        h0 /= np.linalg.norm(h0); h1 /= np.linalg.norm(h1)
+        turned = np.degrees(np.arctan2(np.cross(h0, h1)[2], np.dot(h0, h1)))
+        expect = np.degrees(k) * 0.5
+        d = (abs(turned) - abs((expect + 180) % 360 - 180))
+        if abs(d) > 1.5:
+            ok_axis = False
+            break
+check("H1 body rates along u_body leave the tilt untouched (any attitude)", ok_tilt)
+check("H2 ... and the rotation happens about the earth vertical (rate*t)", ok_axis)
+
+# H3 sign anchor: upright flat, u_body = (0,0,+1) -> the spin command lands
+# on the yaw axis with the stick's sign (today's FLAT SPIN behavior)
+u = inav_rotate([0, 0, 1], inav_rpy_to_quat(0.0, 0.0, 37.0))
+check("H3 upright: u_body == (0,0,+1), spin maps to +yaw (today's mapping)",
+      np.abs(u - np.array([0, 0, 1])).max() < 1e-9)
+
+# H4 knife: u_body lies on the body-y axis -> the spin command lands on pitch
+u = inav_rotate([0, 0, 1], inav_rpy_to_quat(-90.0, 0.0, 123.0))
+check("H4 knife left: u_body == (0,-1,0), spin maps to body pitch",
+      np.abs(u - np.array([0, -1, 0])).max() < 1e-9)
+
 print()
 print("ALL PASS" if not FAIL else f"{len(FAIL)} FAILURES: {FAIL}")

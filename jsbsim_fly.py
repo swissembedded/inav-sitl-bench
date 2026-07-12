@@ -314,6 +314,8 @@ MAN_RC = {   # SEL detents: 1270 INVERT / 1510 KN L / 1750 KN R / 1985 HANG
     "loop_fig":    dict(angle=1300),                  # F LOOP band on the ANGLE channel
     "floor_dive":  dict(angle=RC_HIGH, invert=1900),  # FLOOR switch high
     "flat_spin":   dict(invert=1300),                 # FLAT SPIN flight mode (pilot rudder)
+    "inv_spin":    dict(sel=1270, invert=1300),       # FSPIN + INVERTED: inverted flat spin
+    "knife_spin":  dict(sel=1510, invert=1300),       # FSPIN + KNIFE L: knife edge spin
     "hang_tvc":    dict(sel=1985),                    # prop hang on the TVC pusher delta
     "seq":         dict(angle=1575),                  # F SEQ band: flies whatever
                                                       # sequence figure_script.py programmed
@@ -354,12 +356,13 @@ elif MAN == "loop_fig":
     loop(16, "loop", rc_ch(thr=1900, arm=RC_HIGH, **MAN_RC), print_every=0.7)
     loop(6, "level", rc_ch(thr=1650, arm=RC_HIGH, **MAN_RC), print_every=0.7)
     loop(4, "exit", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
-elif MAN == "flat_spin":
-    # FLAT SPIN as a flight mode: box on holds the attitude flat, the
-    # pilot's rudder drives the autorotation (idle throttle, full rudder),
-    # releasing the rudder stops the rotation with the attitude still
-    # held, releasing the box recovers to ANGLE
-    loop(3, "flat-hold", rc_ch(thr=1650, arm=RC_HIGH, **MAN_RC), print_every=0.7)
+elif MAN in ("flat_spin", "inv_spin", "knife_spin"):
+    # FLAT SPIN family: the box holds the selected attitude (flat, inverted
+    # or knife edge via SEL) while the pilot's rudder commands the rotation
+    # about the earth vertical (idle throttle, full rudder); releasing the
+    # rudder stops the rotation with the attitude still held, releasing the
+    # box recovers to ANGLE
+    loop(4, "spin-hold", rc_ch(thr=1650, arm=RC_HIGH, **MAN_RC), print_every=0.7)
     loop(10, "spin-rud", rc_ch(thr=1000, arm=RC_HIGH, rud=2000, **MAN_RC), print_every=0.7)
     loop(5, "rud-release", rc_ch(thr=1650, arm=RC_HIGH, **MAN_RC), print_every=0.7)
     loop(5, "exit", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
