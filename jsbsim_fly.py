@@ -59,7 +59,7 @@ def fc_mode(m, boxids):
               if (i >> 3) < len(bm) and (bm[i >> 3] >> (i & 7)) & 1}
     if 27 in active:                            # FAILSAFE overrides everything
         return "FAILSAFE"
-    base = next((PERM_NAME[p] for p in (69, 70, 71, 72, 74, 75, 76, 77)
+    base = next((PERM_NAME[p] for p in (69, 70, 71, 72, 74, 75, 76, 77, 79)
                  if p in active), None)
     if base is None:
         base = "ANGLE" if 1 in active else ("ACRO" if 0 in active else "DISARMED")
@@ -274,6 +274,7 @@ MAN_RC = {   # SEL detents: 1270 INVERT / 1510 KN L / 1750 KN R / 1985 HANG
     "knife_right": dict(sel=1750),
     "hang":        dict(sel=1985),
     "roll_hold":   dict(invert=1575),                 # F ROLL band, own switch mid
+    "loop_fig":    dict(angle=1300),                  # F LOOP band on the ANGLE channel
     "floor_dive":  dict(angle=RC_HIGH, invert=1900),  # FLOOR switch high
     "flat_spin":   dict(),                            # pro-spin sticks in ACRO, then ANGLE recovery
     "f_spin":      dict(angle=1575),                  # F SEQ: controlled flat spin figure
@@ -326,6 +327,12 @@ elif MAN in ("hang", "tvc_hang"):
     loop(8, MAN, rc_ch(thr=thrM, arm=RC_HIGH, angle=RC_LOW, **MAN_RC), print_every=0.7)
     # exit transition: drop the target, ANGLE catches it back to level flight
     loop(8, "exit", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
+elif MAN == "loop_fig":
+    # full loop at fig_loop_rate, then level hold with assist; full power
+    # through the figure so the top has energy
+    loop(16, "loop", rc_ch(thr=1900, arm=RC_HIGH, **MAN_RC), print_every=0.7)
+    loop(6, "level", rc_ch(thr=1650, arm=RC_HIGH, **MAN_RC), print_every=0.7)
+    loop(4, "exit", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
 elif MAN == "fspin_mode":
     # FLAT SPIN as a flight mode: box on holds the attitude flat, the
     # pilot's rudder drives the autorotation (idle throttle, full rudder),
