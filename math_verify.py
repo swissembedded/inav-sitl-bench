@@ -237,5 +237,95 @@ up_t = inav_rotate([0, 0, 1], inav_rpy_to_quat(180, 0, 0))
 check("F3 level vs inverted: up vectors exactly antiparallel (180 deg case)",
       np.abs(up_e + up_t).max() < 1e-12)
 
+# G. Full attitude error (figure line-hold): q_err = conj(q_est) (x) q_tgt,
+#    rotation vector in the estimated BODY frame via quaternionToAxisAngle
+def full_attitude_error(q_est, q_tgt):
+    q_err = inav_mul(inav_conj(q_est), q_tgt)
+    ax, ang = inav_quat_to_axis_angle(q_err)
+    return np.array(ax) * ang
+
+
+def quat_from_rotvec(rv):
+    # quatFromRotVecDeg (standard form, NOT axisAngleToQuaternion)
+    ang = np.linalg.norm(rv)
+    if ang < 1e-12:
+        return np.array([1.0, 0, 0, 0])
+    ax = np.array(rv) / ang
+    return np.array([np.cos(ang / 2), *(ax * np.sin(ang / 2))])
+
+
+# G0 quaternion multiply composes like rotation matrices
+ok = True
+for _ in range(N // 4):
+    qa = inav_rpy_to_quat(*rng.uniform(-170, 170, 3))
+    qb = inav_rpy_to_quat(*rng.uniform(-170, 170, 3))
+    Rab = scipy_q(inav_mul(qa, qb)).as_matrix()
+    if np.abs(Rab - scipy_q(qa).as_matrix() @ scipy_q(qb).as_matrix()).max() > 1e-9:
+        ok = False
+        break
+check("G0 inav_mul(a,b) composes as R(a) @ R(b)", ok)
+
+# G1 full error == scipy body-frame rotvec (relative angle < 180)
+ok = True
+for _ in range(N):
+    qe = inav_rpy_to_quat(*rng.uniform(-170, 170, 3))
+    rv = rng.uniform(-1.0, 1.0, 3)
+    rv = rv / np.linalg.norm(rv) * rng.uniform(0.5, 170.0)
+    qt = inav_mul(qe, quat_from_rotvec(np.radians(rv)))
+    err = np.degrees(full_attitude_error(qe, qt))
+    ref = np.degrees((scipy_q(qe).inv() * scipy_q(qt)).as_rotvec())
+    if np.abs(err - ref).max() > 1e-5:
+        ok = False
+        break
+check("G1 full_attitude_error == scipy (R_est^-1 R_tgt).as_rotvec, body frame", ok)
+
+# G2 sign pin: target rolled +10 deg in the body frame -> err = (+10, 0, 0)
+qe = inav_rpy_to_quat(20.0, -35.0, 140.0)
+qt = inav_mul(qe, quat_from_rotvec(np.radians([10.0, 0, 0])))
+err = np.degrees(full_attitude_error(qe, qt))
+check("G2 body-roll offset +10 -> err (+10, 0, 0) (pidLevel sign)",
+      np.abs(err - np.array([10.0, 0, 0])).max() < 1e-6)
+
+# G3 exact relationship to the reduced error:
+#    - a pure twist about the body-frame up axis is invisible to the reduced
+#      error (heading-free by construction) and comes out of the full error
+#      as exactly psi * up_body -- this is the component the line-hold adds
+#    - a rotation about any axis perpendicular to body-up leaves both errors
+#      identical: the full error changes nothing for pure tilt regulation
+ok_twist = True
+ok_tilt = True
+for _ in range(N // 4):
+    qe = inav_rpy_to_quat(*rng.uniform(-170, 170, 3))
+    up_b = np.array(inav_rotate([0, 0, 1], qe))
+    psi = np.radians(rng.uniform(-90, 90))
+    qt = inav_mul(qe, quat_from_rotvec(psi * up_b))
+    red = reduced_attitude_error(qe, qt)
+    ful = full_attitude_error(qe, qt)
+    if np.linalg.norm(red) > 1e-9 or np.abs(ful - psi * up_b).max() > 1e-9:
+        ok_twist = False
+        break
+    ax = np.cross(up_b, rng.uniform(-1.0, 1.0, 3))
+    ax /= np.linalg.norm(ax)
+    th = np.radians(rng.uniform(1.0, 60.0))
+    qt2 = inav_mul(qe, quat_from_rotvec(th * ax))
+    if np.abs(reduced_attitude_error(qe, qt2) - full_attitude_error(qe, qt2)).max() > 1e-9:
+        ok_tilt = False
+        break
+check("G3a pure twist about body-up: reduced == 0, full == psi * up_body", ok_twist)
+check("G3b rotation about axis perpendicular to body-up: full == reduced", ok_tilt)
+
+# G4 yaw-anchored figure target: q_yaw(psi) (x) TargetFromRP(r,p) == rpy(r,p,psi)
+ok = True
+for _ in range(N // 4):
+    r_, p_, psi = rng.uniform(-170, 170), rng.uniform(-85, 85), rng.uniform(-170, 170)
+    h = np.radians(psi) / 2
+    q_yaw = np.array([np.cos(h), 0, 0, np.sin(h)])
+    q = inav_mul(q_yaw, inav_rpy_to_quat(r_, p_, 0.0))
+    qr = inav_rpy_to_quat(r_, p_, psi)
+    if min(np.abs(q - qr).max(), np.abs(q + qr).max()) > 1e-9:
+        ok = False
+        break
+check("G4 q_yaw(psi) (x) TargetFromRP(r,p) == rpy(r,p,psi) (anchor composition)", ok)
+
 print()
 print("ALL PASS" if not FAIL else f"{len(FAIL)} FAILURES: {FAIL}")
