@@ -251,6 +251,8 @@ NOTES = {
     "floor_dive":  "Safety floor: held dive is caught at the floor; then same dive with the floor switched OFF punches through.",
     "hang_tvc":    "Prop hang on a pusher delta: elevons are dead at zero airspeed, ALL control authority comes from the vectored nozzle (thrust vectoring with inverse throttle compensation).",
     "flat_spin":   "FLAT SPIN flight mode: the controller holds roll and pitch FLAT while the pilot's full rudder at idle drives the autorotation; releasing the rudder stops the rotation with the attitude still held, releasing the box recovers.",
+    "inv_spin":    "INVERTED FLAT SPIN: FLAT SPIN box + INVERTED selects the held attitude; the rudder commands rotation about the earth vertical with aircraft-referenced stick sense (seen from above the rotation reverses vs upright, exactly like a real aircraft).",
+    "knife_spin":  "KNIFE EDGE SPIN: FLAT SPIN box + KNIFE L holds the edge while the rudder command distributes onto the body pitch axis - the rotation about the vertical that the knife attitude leaves free.",
     "inverted_stick": "Stick carving around the inverted reference: half aileron is a HELD angle offset (not a rate), releasing returns the target gently; then the same on the elevator, where the pilot owns the altitude and the assist yields.",
     "loop_fig":    "Full loop at fig_loop_rate under full power, closing on the entry altitude; the level hold with assist settles afterwards.",
 }
