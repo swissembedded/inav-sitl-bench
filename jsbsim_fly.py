@@ -315,6 +315,8 @@ MAN_RC = {   # SEL detents: 1270 INVERT / 1510 KN L / 1750 KN R / 1985 HANG
     "floor_dive":  dict(angle=RC_HIGH, invert=1900),  # FLOOR switch high
     "flat_spin":   dict(invert=1300),                 # FLAT SPIN flight mode (pilot rudder)
     "hang_tvc":    dict(sel=1985),                    # prop hang on the TVC pusher delta
+    "seq":         dict(angle=1575),                  # F SEQ band: flies whatever
+                                                      # sequence figure_script.py programmed
 }[MAN]
 thrM = 1500 if MAN in ("hang", "hang_tvc") else 1650   # level trim; holds start stable (hang: hover PID owns)
 
@@ -361,6 +363,11 @@ elif MAN == "flat_spin":
     loop(10, "spin-rud", rc_ch(thr=1000, arm=RC_HIGH, rud=2000, **MAN_RC), print_every=0.7)
     loop(5, "rud-release", rc_ch(thr=1650, arm=RC_HIGH, **MAN_RC), print_every=0.7)
     loop(5, "exit", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
+elif MAN == "seq":
+    # fly whatever sequence figure_script.py programmed (video pipeline):
+    # full power through the figures, the sequencer owns the trajectory
+    loop(60, "seq", rc_ch(thr=1800, arm=RC_HIGH, **MAN_RC), print_every=0.7)
+    loop(6, "exit", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
 elif MAN == "inverted_stick":
     # ANGLE-semantics stick offsets: half aileron must carve a HELD angle
     # offset from the inverted reference (not a rate), releasing returns

@@ -24,7 +24,8 @@ JSON format. Only use these segment types:
 - `{"type": "wait_time", "ms": <n>, "assist": true}` — level pause
   between figures.
 - `{"type": "wait_alt", "altitude_m": <n>, "tolerance_m": 3}` — climb
-  gate before a figure that needs entry altitude.
+  gate before a figure that needs entry altitude; altitude_m minimum 20
+  (use 30 when the video flies lower — the bench flies with margin).
 
 Rules:
 - Maximum 15 segments; pick the clearest continuous sequence if the video
