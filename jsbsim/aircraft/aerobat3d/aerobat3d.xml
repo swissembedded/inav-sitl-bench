@@ -70,6 +70,33 @@
       <location unit="M"> <x> 0.35 </x> <y> 0 </y> <z> 0 </z> </location>
       <direction> <x> 1 </x> <y> 0 </y> <z> 0 </z> </direction>
     </force>
+    <!-- Prop reaction torque: a CW prop (seen from behind) rolls the
+         airframe LEFT with a moment proportional to the motor torque
+         (Q = P/omega, ~0.4 Nm at full power for this class), modeled as a
+         force couple: 0.4 N (0.09 LBS) at +-0.5 m span, z-down body frame,
+         net moment about -x. This is the disturbance a knife-edge torque
+         feedforward exists for; without it every knife/hover result is
+         prettier than reality. -->
+    <force name="prop-torque-r" frame="BODY" unit="LBS">
+      <function>
+        <product>
+          <property> fcs/throttle-cmd-norm </property>
+          <value> 0.09 </value>
+        </product>
+      </function>
+      <location unit="M"> <x> 0.35 </x> <y> 0.5 </y> <z> 0 </z> </location>
+      <direction> <x> 0 </x> <y> 0 </y> <z> -1 </z> </direction>
+    </force>
+    <force name="prop-torque-l" frame="BODY" unit="LBS">
+      <function>
+        <product>
+          <property> fcs/throttle-cmd-norm </property>
+          <value> 0.09 </value>
+        </product>
+      </function>
+      <location unit="M"> <x> 0.35 </x> <y> -0.5 </y> <z> 0 </z> </location>
+      <direction> <x> 0 </x> <y> 0 </y> <z> 1 </z> </direction>
+    </force>
   </external_reactions>
 
   <flight_control name="FCS">
