@@ -57,6 +57,11 @@ FLAG_ARMED = 1 << 2
 FLAG_CAL = 1 << 9
 DT = 0.001
 
+# reference mode: SITL started with --lockstep advances its clock exactly
+# one DT per injected frame -- phase durations then count SIM time (frames)
+# and host load cannot skew the physics-vs-AHRS timing
+LOCKSTEP = "--lockstep" in sys.argv
+
 GUST_S = 3.0          # gust duration
 REC_MAX_S = 4.0       # recovery deadline after gust-off
 REC_TOL_DEG = 5.0     # "recovered" when deviation stays below this
@@ -142,10 +147,16 @@ class Runner:
         self.man = maneuver
         self.tvc_gain = tvc_gain     # callable thr01 -> gain, None = no TVC
         self.t0 = time.time()
+        self.frames = 0
+
+    def clock(self):
+        """Bench time [s]: sim time under lockstep, wall time otherwise."""
+        return self.frames * DT if LOCKSTEP else time.time() - self.t0
 
     def fly(self, secs, rc, phase, freeze=False, thr_override=None):
         end = time.time() + secs
-        while time.time() < end:
+        f0 = self.frames
+        while (self.frames - f0 < secs / DT) if LOCKSTEP else (time.time() < end):
             it0 = time.perf_counter()
             r = sim_step(self.m, self.plant.acc_mg(), self.plant.gyro_dps16(),
                          rc, baro_pa=self.plant.baro_pa())
@@ -163,15 +174,18 @@ class Runner:
                                        max(-1.0, min(1.0, r.stab_yaw * g)))
                 self.plant.step(dt=DT)
             jr, jp, jy = self.plant.rpy()
-            self.rows.append((time.time() - self.t0, self.man, phase,
+            self.frames += 1
+            self.rows.append((self.clock(), self.man, phase,
                               jr, jp, jy, self.plant.z,
                               ail, ele, rud, thr))
-            while True:
-                rem = DT - (time.perf_counter() - it0)
-                if rem <= 0:
-                    break
-                if rem > 0.002:
-                    time.sleep(rem - 0.002)
+            # lockstep needs no pacing: the FC clock only moves with our frames
+            if not LOCKSTEP:
+                while True:
+                    rem = DT - (time.perf_counter() - it0)
+                    if rem <= 0:
+                        break
+                    if rem > 0.002:
+                        time.sleep(rem - 0.002)
         return self.plant.rpy(), self.plant.z
 
 
@@ -216,11 +230,11 @@ def run_maneuver(man, gust_ms, do_restart, sets=()):
             m.close()
             return None
     run.fly(6, rc_ch(), "settle", freeze=True)
-    t0 = time.time()
-    while (arming_flags(m) & FLAG_CAL) and time.time() - t0 < 25:
+    t0 = run.clock()
+    while (arming_flags(m) & FLAG_CAL) and run.clock() - t0 < 25:
         run.fly(1.0, rc_ch(angle=RC_HIGH), "cal", freeze=True)
-    t0 = time.time()
-    while not (arming_flags(m) & FLAG_ARMED) and time.time() - t0 < 20:
+    t0 = run.clock()
+    while not (arming_flags(m) & FLAG_ARMED) and run.clock() - t0 < 20:
         run.fly(1.0, rc_ch(thr=RC_LOW, arm=RC_LOW, angle=RC_HIGH), "armL", freeze=True)
         run.fly(1.2, rc_ch(thr=RC_LOW, arm=RC_HIGH, angle=RC_HIGH), "armH", freeze=True)
     if not (arming_flags(m) & FLAG_ARMED):
@@ -236,9 +250,9 @@ def run_maneuver(man, gust_ms, do_restart, sets=()):
     rc_hold = rc_ch(thr=thr_hold, arm=RC_HIGH, angle=RC_LOW, sel=sel)
 
     # engage + wait for capture
-    t0 = time.time()
+    t0 = run.clock()
     captured = False
-    while time.time() - t0 < 15:
+    while run.clock() - t0 < 15:
         (jr, jp, _), _ = run.fly(0.5, rc_hold, "entry")
         if tilt_between((jr, jp), target_rp) < SETTLE_TOL_DEG:
             captured = True
@@ -267,9 +281,9 @@ def run_maneuver(man, gust_ms, do_restart, sets=()):
         try:
             # re-capture check: the next gust must start from a healthy hold,
             # otherwise one upset cascades through the whole battery
-            t0 = time.time()
+            t0 = run.clock()
             recaptured = False
-            while time.time() - t0 < 10:
+            while run.clock() - t0 < 10:
                 (jr, jp, _), _ = run.fly(0.5, rc_hold, "resettle")
                 if tilt_between((jr, jp), target_rp) < SETTLE_TOL_DEG:
                     recaptured = True
@@ -283,8 +297,8 @@ def run_maneuver(man, gust_ms, do_restart, sets=()):
             run.fly(2.0, rc_hold, "resettle")
 
             base = []
-            end = time.time() + BASELINE_S
-            while time.time() < end:
+            end = run.clock() + BASELINE_S
+            while run.clock() < end:
                 (jr, jp, _), z = run.fly(0.1, rc_hold, "baseline")
                 base.append((jr, jp, z))
             base_up = mean_up([(b[0], b[1]) for b in base])
@@ -302,26 +316,26 @@ def run_maneuver(man, gust_ms, do_restart, sets=()):
                            down_ms=down * gust_ms)
             tilt_max = 0.0
             dalt_max = 0.0
-            end = time.time() + GUST_S
-            while time.time() < end:
+            end = run.clock() + GUST_S
+            while run.clock() < end:
                 (jr, jp, _), z = run.fly(0.1, rc_hold, f"gust-{dname}")
                 tilt_max = max(tilt_max, tilt_to_up((jr, jp), base_up))
                 dalt_max = max(dalt_max, abs(z - base_z))
             plant.set_wind()
 
             # recovery: deviation must stay below tolerance for REC_HOLD_S
-            t_off = time.time()
+            t_off = run.clock()
             t_rec = None
             below_since = None
-            while time.time() - t_off < REC_MAX_S + REC_HOLD_S:
+            while run.clock() - t_off < REC_MAX_S + REC_HOLD_S:
                 (jr, jp, _), z = run.fly(0.1, rc_hold, f"rec-{dname}")
                 dev = tilt_to_up((jr, jp), base_up)
                 tilt_max = max(tilt_max, dev)
                 dalt_max = max(dalt_max, abs(z - base_z))
                 if dev < rec_tol:
                     if below_since is None:
-                        below_since = time.time()
-                    elif time.time() - below_since >= REC_HOLD_S:
+                        below_since = run.clock()
+                    elif run.clock() - below_since >= REC_HOLD_S:
                         t_rec = below_since - t_off
                         break
                 else:
