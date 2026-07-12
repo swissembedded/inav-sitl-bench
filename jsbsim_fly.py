@@ -104,6 +104,16 @@ def _tilt_div_deg(fr, fp, jr, jp):
         return (-math.sin(p), math.sin(r) * math.cos(p), math.cos(r) * math.cos(p))
     a, b = up(fr, fp), up(jr, jp)
     return math.degrees(math.acos(max(-1.0, min(1.0, sum(x * y for x, y in zip(a, b))))))
+# --set name=value (repeatable): write firmware settings live before the
+# flight, value size taken from the FC's SETTING_INFO reply (sweeps)
+_argv = sys.argv[1:]
+for _i, _a in enumerate(_argv):
+    if _a == "--set" and _i + 1 < len(_argv) and "=" in _argv[_i + 1]:
+        _n, _v = _argv[_i + 1].split("=", 1)
+        _size = len(m.request(0x1003, _n.encode() + b"\x00"))
+        m.request(0x1004, _n.encode() + b"\x00" + int(_v).to_bytes(_size, "little", signed=int(_v) < 0))
+        print(f"set {_n} = {_v}")
+
 PARAMS = ["fig_roll_rate", "fig_loop_rate", "fig_assist_z_gain", "fig_assist_vz_gain",
           "fig_assist_max", "ohold_inverted_pitch_trim", "ohold_knife_left_pitch_trim",
           "ohold_knife_right_pitch_trim", "ohold_hover_thr_p", "ohold_hover_thr_i",
