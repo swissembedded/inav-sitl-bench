@@ -74,7 +74,7 @@ cs_thr = [float(r.get("thr", 0)) for r in rows]        # 0..1 throttle driven in
 fc_thr = [float(r.get("fc_thr", r.get("thr", 0))) for r in rows]  # FC's own throttle output
 tvc_p = [float(r.get("tvc_p", 0)) for r in rows]   # vectored nozzle servos
 tvc_y = [float(r.get("tvc_y", 0)) for r in rows]
-HAS_TVC = MAN == "tvc_hang"
+HAS_TVC = MAN == "hang_tvc"
 ias = [float(r["ias"]) for r in rows]
 fc_alt = [float(r.get("fc_alt", r["alt"])) for r in rows]  # FC baro-estimated altitude
 # baro is referenced to the boot zero (AGL), truth is MSL -- shift the baro
@@ -249,7 +249,7 @@ NOTES = {
     "hang":        "Prop-hang: nose held near vertical, hover throttle PID owns the altitude (the pull converts speed to height first); heading is the free axis.",
     "roll_hold":   "Axial roll with altitude assist: earth-referenced nose-up distributes to elevator and rudder as the roll phase demands.",
     "floor_dive":  "Safety floor: held dive is caught at the floor; then same dive with the floor switched OFF punches through.",
-    "tvc_hang":    "Prop hang on a pusher delta: elevons are dead at zero airspeed, ALL control authority comes from the vectored nozzle (thrust vectoring with inverse throttle compensation).",
+    "hang_tvc":    "Prop hang on a pusher delta: elevons are dead at zero airspeed, ALL control authority comes from the vectored nozzle (thrust vectoring with inverse throttle compensation).",
     "flat_spin":   "FLAT SPIN flight mode: the controller holds roll and pitch FLAT while the pilot's full rudder at idle drives the autorotation; releasing the rudder stops the rotation with the attitude still held, releasing the box recovers.",
     "inverted_stick": "Stick carving around the inverted reference: half aileron is a HELD angle offset (not a rate), releasing returns the target gently; then the same on the elevator, where the pilot owns the altitude and the assist yields.",
     "loop_fig":    "Full loop at fig_loop_rate under full power, closing on the entry altitude; the level hold with assist settles afterwards.",

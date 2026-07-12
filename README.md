@@ -145,7 +145,7 @@ rigid-body plant this gives real aerodynamics: airspeed, lift, drag, stall
 and control authority all interact -- the energy model the built-in plant
 deliberately lacks.
 
-`tvc_hang` flies on a second airframe, `jsbsim/aircraft/funjet`: a pusher
+`hang_tvc` flies on a second airframe, `jsbsim/aircraft/funjet`: a pusher
 delta with elevons only and a 2-axis vectored nozzle (tau = T * lever *
 sin(deflection)). At hover the elevons are dead -- all authority comes from
 the thrust vector, driven by the firmware's TVC servo-mixer inputs
@@ -163,7 +163,7 @@ Workflow (Linux container SITL only -- the cygwin SITL.exe is capped at
 ~64 Hz by the Windows 15.6 ms timer tick and breaks the 1 kHz coupling;
 provision via `bench.py provision`):
 
-    python jsbsim_fly.py --flip-ele <inverted|knife_left|knife_right|hang|roll_hold|floor_dive|flat_spin|tvc_hang>
+    python jsbsim_fly.py --flip-ele <inverted|knife_left|knife_right|hang|roll_hold|floor_dive|flat_spin|hang_tvc>
     python animate_jsbsim.py <maneuver>     # 3D replay video -> docs/videos/jsbsim_<maneuver>.mp4
     python plot_jsbsim.py                   # static 4-panel figure
 

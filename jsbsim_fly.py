@@ -97,7 +97,7 @@ def _positional(argv):
 _man = next(iter(_positional(sys.argv[1:])), "inverted")
 # default start = 120 m (legal RC ceiling); floor_dive trades ~100 m away,
 # so it alone starts higher to leave room for the catch
-_model = "c172p" if "--c172" in sys.argv else ("funjet" if _man == "tvc_hang" else "aerobat3d")
+_model = "c172p" if "--c172" in sys.argv else ("funjet" if _man == "hang_tvc" else "aerobat3d")
 # 1500 ft for the diagnostic c172 (entry transient), 120 m for everything
 # else -- the altitude floor works relative to the baro zero at start
 plant = JSBSimPlant(model=_model,
@@ -199,7 +199,7 @@ def loop(secs, phase, rc, thr_override=None, print_every=1.0, freeze=False):
             _step_clock[0] = time.perf_counter()
         else:
             plant.set_controls(ail, ele, rud, thr)
-            if _man == "tvc_hang":
+            if _man == "hang_tvc":
                 plant.set_tvc(tvcp, tvcy)
             if LOCKSTEP:
                 # the FC clock advances exactly DT per frame - fixed step,
@@ -307,9 +307,9 @@ MAN_RC = {   # SEL detents: 1270 INVERT / 1510 KN L / 1750 KN R / 1985 HANG
     "loop_fig":    dict(angle=1300),                  # F LOOP band on the ANGLE channel
     "floor_dive":  dict(angle=RC_HIGH, invert=1900),  # FLOOR switch high
     "flat_spin":   dict(invert=1300),                 # FLAT SPIN flight mode (pilot rudder)
-    "tvc_hang":    dict(sel=1985),                    # prop hang on the TVC pusher delta
+    "hang_tvc":    dict(sel=1985),                    # prop hang on the TVC pusher delta
 }[MAN]
-thrM = 1500 if MAN in ("hang", "tvc_hang") else 1650   # level trim; holds start stable (hang: hover PID owns)
+thrM = 1500 if MAN in ("hang", "hang_tvc") else 1650   # level trim; holds start stable (hang: hover PID owns)
 
 
 # --- MANUAL: pilot flies by hand in ANGLE so the sticks visibly move,
@@ -331,7 +331,7 @@ if MAN == "floor_dive":
     # the floor plane (climb high enough first, then keep pushing well past it)
     loop(8, "climb2", rc_ch(thr=1900, arm=RC_HIGH, ele=1800, **MAN_RC), print_every=1)
     loop(13, "dive-nofloor", rc_ch(thr=1700, arm=RC_HIGH, ele=1150, angle=RC_HIGH), print_every=0.7)
-elif MAN in ("hang", "tvc_hang"):
+elif MAN in ("hang", "hang_tvc"):
     loop(6, MAN, rc_ch(thr=thrM, arm=RC_HIGH, angle=RC_LOW, **MAN_RC), print_every=0.7)
     plant.set_wind(down_ms=3.0)
     loop(4, "gust", rc_ch(thr=thrM, arm=RC_HIGH, angle=RC_LOW, **MAN_RC), print_every=0.7)

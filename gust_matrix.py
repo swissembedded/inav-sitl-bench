@@ -67,14 +67,14 @@ SETTLE_TOL_DEG = 8.0  # hold counts as captured below this error
 BASELINE_S = 1.0      # pre-gust averaging window
 
 # maneuver -> (SEL detent, throttle, target roll/pitch, airframe)
-# tvc_hang: prop hang on the TVC pusher delta - elevons are dead at hover,
+# hang_tvc: prop hang on the TVC pusher delta - elevons are dead at hover,
 # all authority comes from the vectored nozzle
 HOLDS = {
     "inverted":    (1270, 1650, (180.0, 0.0), "aerobat3d"),
     "knife_left":  (1510, 1650, (-90.0, 0.0), "aerobat3d"),
     "knife_right": (1750, 1650, (90.0, 0.0), "aerobat3d"),
     "hang":        (1985, 1500, (0.0, 90.0), "aerobat3d"),
-    "tvc_hang":    (1985, 1500, (0.0, 90.0), "funjet"),
+    "hang_tvc":    (1985, 1500, (0.0, 90.0), "funjet"),
 }
 
 # push direction -> unit vector (along, right, down) in the entry-track frame
@@ -335,7 +335,7 @@ def run_maneuver(man, gust_ms, do_restart, sets=()):
             aborted = True
             flush_rows()
             continue
-        alt_limit = ALT_MAX_M * (1.5 if man in ("hang", "tvc_hang") else 1.0)
+        alt_limit = ALT_MAX_M * (1.5 if man in ("hang", "hang_tvc") else 1.0)
         ok = (tilt_max < TILT_MAX_DEG and t_rec is not None
               and t_rec < REC_MAX_S and dalt_max < alt_limit)
         results.append((man, dname, tilt_max, t_rec, dalt_max, ok))
