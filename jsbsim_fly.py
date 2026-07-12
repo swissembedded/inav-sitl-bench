@@ -87,7 +87,7 @@ def _positional(argv):
         if skip:
             skip = False
             continue
-        if a == "--set":
+        if a in ("--set", "--imu-offset"):
             skip = True
             continue
         if not a.startswith("--"):
@@ -102,6 +102,13 @@ _model = "c172p" if "--c172" in sys.argv else ("funjet" if _man == "hang_tvc" el
 # else -- the altitude floor works relative to the baro zero at start
 plant = JSBSimPlant(model=_model,
                     alt_ft=1500 if _model == "c172p" else (820 if _man == "flat_spin" else 394))
+# --imu-offset x,y,z [m]: sensor lever arm from the CG (body frame). Off-CG
+# sensors additionally measure w x (w x r) -- constant in the body frame
+# during a steady spin, the false-down pull a CG-mounted model cannot show.
+if "--imu-offset" in sys.argv:
+    _off = [float(v) for v in sys.argv[sys.argv.index("--imu-offset") + 1].split(",")]
+    plant.set_imu_offset(*_off)
+    print(f"IMU lever arm: {_off} m")
 log = open(f"jsbsim_log_{_man}.csv", "w")
 log.write("t,phase,mode,fc_roll,fc_pitch,fc_yaw,js_roll,js_pitch,js_yaw,ias,alt,"
           "ail,ele,rud,thr,fc_thr,st_ail,st_ele,st_thr,st_rud,"

@@ -150,11 +150,44 @@ class JSBSimPlant:
         # saturate like the real IMU (int16 = +-2048 deg/s)
         return tuple(max(-32767, min(32767, int(round(v * 16)))) for v in (p, qq, r))
 
+    def set_imu_offset(self, x_m=0.0, y_m=0.0, z_m=0.0):
+        """IMU lever arm from the CG in body frame [m]. A sensor off the CG
+        additionally measures the centripetal term w x (w x r) plus the
+        angular-acceleration term alpha x r -- constant in the body frame
+        during a steady spin, i.e. exactly the false-down pull a CG-mounted
+        model cannot show."""
+        self._imu_r = (x_m, y_m, z_m)
+        self._imu_w_prev = None
+
+    def _imu_lever_arm_g(self):
+        r = getattr(self, "_imu_r", (0.0, 0.0, 0.0))
+        if r == (0.0, 0.0, 0.0):
+            return (0.0, 0.0, 0.0)
+        f = self.fdm
+        w = (f["velocities/p-rad_sec"], f["velocities/q-rad_sec"],
+             f["velocities/r-rad_sec"])
+        wxr = (w[1] * r[2] - w[2] * r[1],
+               w[2] * r[0] - w[0] * r[2],
+               w[0] * r[1] - w[1] * r[0])
+        a = [w[1] * wxr[2] - w[2] * wxr[1],
+             w[2] * wxr[0] - w[0] * wxr[2],
+             w[0] * wxr[1] - w[1] * wxr[0]]
+        wp = getattr(self, "_imu_w_prev", None)
+        if wp is not None:
+            alpha = tuple((b - c) / self.BASE_DT for b, c in zip(w, wp))
+            a[0] += alpha[1] * r[2] - alpha[2] * r[1]
+            a[1] += alpha[2] * r[0] - alpha[0] * r[2]
+            a[2] += alpha[0] * r[1] - alpha[1] * r[0]
+        self._imu_w_prev = w
+        return (a[0] / G, a[1] / G, a[2] / G)
+
     def acc_mg(self):
         f_earth = (self._a_earth[0] / G,
                    self._a_earth[1] / G,
                    self._a_earth[2] / G + 1.0)
         f_body = rotate_earth_to_body(self.q, f_earth)
+        lever = self._imu_lever_arm_g()
+        f_body = tuple(fb + lv for fb, lv in zip(f_body, lever))
         return tuple(int(round(max(-16.0, min(16.0, a)) * 1000)) for a in f_body)
 
     def baro_pa(self):
