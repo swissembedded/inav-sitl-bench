@@ -71,6 +71,14 @@ def pack_request(acc_mg: tuple[int, int, int],
                  flags: int = BENCH_FLAGS,
                  gps: dict | None = None) -> bytes:
     assert len(rc_channels_us) == 8
+    # a diverged plant (crash, numerical blow-up) produces pressures far
+    # outside the packable range; fail with a diagnosis instead of an
+    # opaque struct.error deep in the pack call
+    if not (0 <= baro_pa < 2**32):
+        raise RuntimeError(
+            f"plant diverged: baro_pa={baro_pa} is outside any physical range "
+            "(the airframe left the envelope - check the maneuver/log, this "
+            "is not a packing bug)")
     if gps is not None:
         flags |= HITL_HAS_NEW_GPS_DATA
     p = struct.pack("<BH", 3, flags)

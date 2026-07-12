@@ -401,7 +401,16 @@ else:
     loop(12, MAN, rc_ch(thr=thrM, arm=RC_HIGH, angle=RC_LOW, **MAN_RC), print_every=0.7)
 
 fr, fp, fy = fc_att(m); jr, jp, jy = plant.rpy()
-print(f"FINAL: FC roll {fr:+.1f}  JS roll {jr:+.1f}  (Erfolg wenn |roll| ~ 180)")
+# per-maneuver end state: only the sustained holds END in the held attitude;
+# figures/spins/exits end LEVEL by design (roll ~ 0)
+_EXPECT = {
+    "inverted": "|roll| ~ 180", "inverted_stick": "|roll| ~ 180",
+    "knife_left": "roll ~ -90", "knife_right": "roll ~ +90",
+    "hang": "pitch ~ +90 during hold, level after exit",
+    "hang_tvc": "pitch ~ +90 during hold, level after exit",
+}
+print(f"FINAL: FC roll {fr:+.1f}  JS roll {jr:+.1f}  "
+      f"(expected: {_EXPECT.get(MAN, 'level, roll ~ 0 - figure/spin ends level by design')})")
 # FC-vs-truth divergence: a corrupted AHRS (sustained spin rotation) can
 # report level while the plane spirals into the ground -- checking only
 # the FC's own attitude waves that through. Compare the tilt of both.
