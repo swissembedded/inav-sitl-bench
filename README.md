@@ -167,7 +167,7 @@ Workflow (Linux container SITL only -- the cygwin SITL.exe is capped at
 ~64 Hz by the Windows 15.6 ms timer tick and breaks the 1 kHz coupling;
 provision via `bench.py provision`):
 
-    python jsbsim_fly.py --flip-ele <inverted|knife_left|knife_right|hang|roll_hold|floor_dive|flat_spin|hang_tvc>
+    python jsbsim_fly.py --flip-ele <inverted|inverted_stick|knife_left|knife_right|hang|hang_tvc|roll_hold|loop_fig|floor_dive|flat_spin>
     python animate_jsbsim.py <maneuver>     # 3D replay video -> docs/videos/jsbsim_<maneuver>.mp4
     python plot_jsbsim.py                   # static 4-panel figure
 
