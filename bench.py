@@ -44,6 +44,7 @@ PERM_ARM, PERM_ANGLE = 0, 1
 PERM_INVERTED, PERM_KNIFELEFT, PERM_KNIFERIGHT, PERM_PROPHANG = 69, 70, 71, 72
 PERM_ALTFLOOR = 73
 PERM_FIGROLL, PERM_FIGLOOP, PERM_FIGPOINTROLL, PERM_FIGSEQ = 74, 75, 76, 77
+PERM_FSPIN = 79
 RC_ALTFLOOR_ON = 1900   # ALT FLOOR band on the CH_INVERTED channel (1700-2100;
                         # 1150-1450 on the same channel is FLAT SPIN)
 RC_FIGROLL_ON = 1575    # FIGURE ROLL band on the CH_INVERTED channel
@@ -111,6 +112,9 @@ def provision():
     msp.set_mode_range(7, PERM_FIGROLL, CH_INVERTED - 4, 1450, 1700)
     msp.set_mode_range(8, PERM_FIGLOOP, CH_ANGLE - 4, 1150, 1450)
     msp.set_mode_range(9, PERM_FIGSEQ, CH_ANGLE - 4, 1450, 1700)
+    # slot 10 MUST stay contiguous: the FC compacts the mode-range list at
+    # the first gap on save, a gapped slot silently disappears after reboot
+    msp.set_mode_range(10, PERM_FSPIN, CH_INVERTED - 4, 1150, 1450)
     # tuned against the JSBSim aerobat3d plant (2026-07-10): altitude spans
     # over a 22 s figure: inverted 3.1 m, roll_hold 1.1 m, knife L/R 6 m
     # (slightly sinking, never climbing)
@@ -685,7 +689,7 @@ def lock():
     rc = rc_neutral()
     # temporarily map 3D LOCK onto the knife-left band
     msp.set_mode_range(3, PERM_KNIFELEFT, CH_SELECT - 4, 900, 900)
-    msp.set_mode_range(10, PERM_ATTLOCK, CH_SELECT - 4, 1150, 1450)
+    msp.set_mode_range(11, PERM_ATTLOCK, CH_SELECT - 4, 1150, 1450)
 
     wait_boot_calibration(msp)
     settle_until_level(msp, plane, rc)
@@ -733,7 +737,7 @@ def lock():
 
     # restore mode ranges
     msp.set_mode_range(3, PERM_KNIFELEFT, CH_SELECT - 4, 1150, 1450)
-    msp.set_mode_range(10, PERM_ATTLOCK, CH_SELECT - 4, 900, 900)
+    msp.set_mode_range(11, PERM_ATTLOCK, CH_SELECT - 4, 900, 900)
     rc[CH_SELECT] = RC_LOW
     rc[CH_ARM] = RC_LOW
     stream(msp, plane, rc, 0.3, closed_loop=False)
