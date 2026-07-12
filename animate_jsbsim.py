@@ -239,14 +239,15 @@ axS.set_xticks([-1, 0, 1]); axS.set_xticklabels(["-1", "0", "1"], fontsize=6)
 axS.axvline(0, color="0.85", lw=0.7)
 bars = axS.barh(list(range(_n_out)), [0] * _n_out, height=0.6, color=_out_colors)
 NOTES = {
-    "inverted":    "Inverted flight: rolled 180 deg and held, controller keeps altitude at ~50 kts.",
-    "knife_left":  "Knife-edge (left): rolls toward 90 deg, but the airframe has no fuselage lift, so it bleeds speed into a flat spin.",
-    "knife_right": "Knife-edge (right): as knife_left -- without fuselage lift the speed decays and it mushes.",
-    "hang":        "Prop-hang: nose held near vertical at near-zero airspeed; heading wanders.",
-    "roll_hold":   "Axial roll with altitude assist: controller rolls while trying to hold height.",
+    "inverted":    "Inverted flight: target slews to 180 deg at the entry rate, altitude assist holds height through a gust and a deliberate rudder turn.",
+    "knife_left":  "Knife-edge (left): held at -90 deg with nose-up pitch trim carrying the fuselage lift on the rudder; altitude assist keeps the height.",
+    "knife_right": "Knife-edge (right): as knife_left on the other side -- separate trim per side, prop effects break the symmetry.",
+    "hang":        "Prop-hang: nose held near vertical, hover throttle PID owns the altitude (the pull converts speed to height first); heading is the free axis.",
+    "roll_hold":   "Axial roll with altitude assist: earth-referenced nose-up distributes to elevator and rudder as the roll phase demands.",
     "floor_dive":  "Safety floor: held dive is caught at the floor; then same dive with the floor switched OFF punches through.",
     "tvc_hang":    "Prop hang on a pusher delta: elevons are dead at zero airspeed, ALL control authority comes from the vectored nozzle (thrust vectoring with inverse throttle compensation).",
-    "flat_spin":   "Flat spin: pro-spin inputs in ACRO (idle, full up-elevator, full rudder) until it autorotates, then ANGLE is flipped on and the controller recovers.",
+    "flat_spin":   "Flat spin: pro-spin inputs in ACRO (idle, full up-elevator, full rudder) until it autorotates, then ANGLE is flipped on and the controller recovers. Watch the FC-vs-truth gap during the spin: the acc correction is blind while autorotating.",
+    "inverted_stick": "Stick carving around the inverted reference: half aileron is a HELD angle offset (not a rate), releasing returns the target gently; then the same on the elevator, where the pilot owns the altitude and the assist yields.",
 }
 fig.text(0.5, 0.975, NOTES.get(MAN, ""), ha="center", va="top",
          fontsize=9, style="italic", wrap=True)
