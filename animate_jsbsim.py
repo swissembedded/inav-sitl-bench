@@ -250,11 +250,9 @@ NOTES = {
     "roll_hold":   "Axial roll with altitude assist: earth-referenced nose-up distributes to elevator and rudder as the roll phase demands.",
     "floor_dive":  "Safety floor: held dive is caught at the floor; then same dive with the floor switched OFF punches through.",
     "tvc_hang":    "Prop hang on a pusher delta: elevons are dead at zero airspeed, ALL control authority comes from the vectored nozzle (thrust vectoring with inverse throttle compensation).",
-    "flat_spin":   "Flat spin: pro-spin inputs in ACRO (idle, full up-elevator, full rudder) until it autorotates, then ANGLE is flipped on and the controller recovers. Watch the FC-vs-truth gap during the spin: the acc correction is blind while autorotating.",
+    "flat_spin":   "FLAT SPIN flight mode: the controller holds roll and pitch FLAT while the pilot's full rudder at idle drives the autorotation; releasing the rudder stops the rotation with the attitude still held, releasing the box recovers.",
     "inverted_stick": "Stick carving around the inverted reference: half aileron is a HELD angle offset (not a rate), releasing returns the target gently; then the same on the elevator, where the pilot owns the altitude and the assist yields.",
     "loop_fig":    "Full loop at fig_loop_rate under full power, closing on the entry altitude; the level hold with assist settles afterwards.",
-    "fspin_mode":  "FLAT SPIN flight mode: the controller holds roll and pitch FLAT while the pilot's full rudder at idle drives the autorotation; releasing the rudder stops the rotation, the attitude stays held.",
-    "f_spin":      "Programmed spin figure: IMPULSE stall kick, then the SPIN segment holds roll/pitch flat with open-loop rudder and counts turns. Honest result: this plant barely autorotates from the falling entry - the airframe model has no real spin aerodynamics.",
 }
 fig.text(0.5, 0.975, NOTES.get(MAN, ""), ha="center", va="top",
          fontsize=9, style="italic", wrap=True)

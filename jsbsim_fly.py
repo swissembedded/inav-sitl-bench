@@ -300,23 +300,11 @@ MAN_RC = {   # SEL detents: 1270 INVERT / 1510 KN L / 1750 KN R / 1985 HANG
     "roll_hold":   dict(invert=1575),                 # F ROLL band, own switch mid
     "loop_fig":    dict(angle=1300),                  # F LOOP band on the ANGLE channel
     "floor_dive":  dict(angle=RC_HIGH, invert=1900),  # FLOOR switch high
-    "flat_spin":   dict(),                            # pro-spin sticks in ACRO, then ANGLE recovery
-    "f_spin":      dict(angle=1575),                  # F SEQ: controlled flat spin figure
-    "fspin_mode":  dict(invert=1300),                 # FLAT SPIN flight mode (pilot rudder)
+    "flat_spin":   dict(invert=1300),                 # FLAT SPIN flight mode (pilot rudder)
     "tvc_hang":    dict(sel=1985),                    # prop hang on the TVC pusher delta
 }[MAN]
 thrM = 1500 if MAN in ("hang", "tvc_hang") else 1650   # level trim; holds start stable (hang: hover PID owns)
 
-if MAN == "f_spin":
-    # controlled flat spin figure: settle level -> stall kick (IMPULSE) ->
-    # SPIN(2 turns, full rudder) with roll/pitch actively held flat ->
-    # level hold with assist
-    FIGSEG_END, FIGSEG_WAIT_TIME, FIGSEG_IMPULSE, FIGSEG_SPIN = 0, 5, 6, 8
-    m.set_figure_segment(0, FIGSEG_WAIT_TIME, p3=1500, flags=1)
-    m.set_figure_segment(1, FIGSEG_IMPULSE, p1=100, p2=100, p3=700)
-    m.set_figure_segment(2, FIGSEG_SPIN, p1=2, p2=100, p3=12000)
-    m.set_figure_segment(3, FIGSEG_WAIT_TIME, p3=4000, flags=1)
-    m.set_figure_segment(4, FIGSEG_END)
 
 # --- MANUAL: pilot flies by hand in ANGLE so the sticks visibly move,
 #     then we flip the figure switch -> the sequence takes over ---
@@ -326,13 +314,7 @@ loop(3, "manual", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH, ail=1750))
 loop(3, "manual", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH))
 
 print(f"=== SEQUENCE {MAN} (Umschalten manuell -> Regler) ===")
-if MAN == "flat_spin":
-    # spin entry in ACRO: idle power, full up-elevator, full rudder -- the
-    # stalled wing autorotates; then flip ANGLE back on: the controller
-    # must catch the spin and level out
-    loop(7, "spin-entry", rc_ch(thr=1000, arm=RC_HIGH, ele=2000, rud=2000), print_every=0.7)
-    loop(12, "recover", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
-elif MAN == "floor_dive":
+if MAN == "floor_dive":
     # floor arms only after climbing above floor+margin (30+10 m over the
     # baro zero); then push over and HOLD the stick -- the floor must catch
     # and level AGAINST the held down-elevator, not because we let go
@@ -357,7 +339,7 @@ elif MAN == "loop_fig":
     loop(16, "loop", rc_ch(thr=1900, arm=RC_HIGH, **MAN_RC), print_every=0.7)
     loop(6, "level", rc_ch(thr=1650, arm=RC_HIGH, **MAN_RC), print_every=0.7)
     loop(4, "exit", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
-elif MAN == "fspin_mode":
+elif MAN == "flat_spin":
     # FLAT SPIN as a flight mode: box on holds the attitude flat, the
     # pilot's rudder drives the autorotation (idle throttle, full rudder),
     # releasing the rudder stops the rotation with the attitude still
@@ -365,13 +347,6 @@ elif MAN == "fspin_mode":
     loop(3, "flat-hold", rc_ch(thr=1650, arm=RC_HIGH, **MAN_RC), print_every=0.7)
     loop(10, "spin-rud", rc_ch(thr=1000, arm=RC_HIGH, rud=2000, **MAN_RC), print_every=0.7)
     loop(5, "rud-release", rc_ch(thr=1650, arm=RC_HIGH, **MAN_RC), print_every=0.7)
-    loop(5, "exit", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
-elif MAN == "f_spin":
-    # figure runs on its own; idle throttle for the spin itself, then power
-    # back for the level recovery segment
-    loop(3, "f-settle", rc_ch(thr=1650, arm=RC_HIGH, **MAN_RC), print_every=0.7)
-    loop(14, "f-spin", rc_ch(thr=1000, arm=RC_HIGH, **MAN_RC), print_every=0.7)
-    loop(6, "f-level", rc_ch(thr=1650, arm=RC_HIGH, **MAN_RC), print_every=0.7)
     loop(5, "exit", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
 elif MAN == "inverted_stick":
     # ANGLE-semantics stick offsets: half aileron must carve a HELD angle
