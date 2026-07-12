@@ -213,11 +213,15 @@ dotR, = axIN.plot([1.4], [0], "o", ms=7, color="#1f77b4")
 # 3) pilot mode switches (lever position = channel value)
 axSw = panel(PY[2], "switches")
 axSw.set_xlim(-0.5, 4.6); axSw.set_ylim(-1.5, 1.5)
-axSw.set_xticks([0, 1, 2, 3]); axSw.set_xticklabels(["ARM", "ANGLE", "FLOOR", "SEL"], fontsize=7.5)
+axSw.set_xticks([0, 1, 2, 3]); axSw.set_xticklabels(["ARM", "ANGLE", "AUX", "SEL"], fontsize=7.5)
 axSw.set_yticks([])
 for xx in range(4):
     axSw.plot([xx, xx], [-1, 1], color="0.8", lw=3, solid_capstyle="round")
-for yy, lbl in ((0.15, "F ROLL"), (0.8, "FLOOR")):
+# complete band labels per channel, y = (band mid - 1500) / 500
+axSw.text(0.18, 0.8, "ARMED", fontsize=6.5, va="center", color="0.35")
+for yy, lbl in ((-0.4, "F LOOP"), (0.15, "F SEQ"), (0.8, "ANGLE")):
+    axSw.text(1.18, yy, lbl, fontsize=6.5, va="center", color="0.35")
+for yy, lbl in ((-0.4, "F-SPIN"), (0.15, "F ROLL"), (0.8, "FLOOR")):
     axSw.text(2.18, yy, lbl, fontsize=6.5, va="center", color="0.35")
 for yy, lbl in ((-0.46, "INV"), (0.02, "KN L"), (0.5, "KN R"), (0.97, "HANG")):
     axSw.text(3.18, yy, lbl, fontsize=6.5, va="center", color="0.35")
