@@ -80,7 +80,21 @@ def fc_att(m):
     return r / 10.0, pi / 10.0, y
 
 m = MspClient()
-_man = next((a for a in sys.argv[1:] if not a.startswith("--")), "inverted")
+# positional args, skipping option values (--set name=value)
+def _positional(argv):
+    out, skip = [], False
+    for a in argv:
+        if skip:
+            skip = False
+            continue
+        if a == "--set":
+            skip = True
+            continue
+        if not a.startswith("--"):
+            out.append(a)
+    return out
+
+_man = next(iter(_positional(sys.argv[1:])), "inverted")
 # default start = 120 m (legal RC ceiling); floor_dive trades ~100 m away,
 # so it alone starts higher to leave room for the catch
 _model = "c172p" if "--c172" in sys.argv else ("funjet" if _man == "tvc_hang" else "aerobat3d")
@@ -276,7 +290,7 @@ print("ARMED:", bool(arming_flags(m) & FLAG_ARMED), f"flags=0x{arming_flags(m):X
 print("=== ANGLE LEVEL (einschwingen aus sauberer Initialbedingung) ===")
 loop(6, "level", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH))   # 1450 = level trim (~50 kts, 0 m/min)
 
-MAN = next((a for a in sys.argv[1:] if not a.startswith("--")), "inverted")
+MAN = _man
 MAN_RC = {   # SEL detents: 1270 INVERT / 1510 KN L / 1750 KN R / 1985 HANG
     "inverted":    dict(sel=1270),
     "inverted_stick": dict(sel=1270),   # stick-offset carving around inverted
