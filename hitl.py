@@ -83,7 +83,9 @@ def pack_request(acc_mg: tuple[int, int, int],
         flags |= HITL_HAS_NEW_GPS_DATA
     p = struct.pack("<BH", 3, flags)
     if gps is not None:
-        p += struct.pack("<BBiiihhhhh", 2, 12,   # fixType: GPS_FIX_3D == 2
+        p += struct.pack("<BBiiihhhhh",
+                         gps.get("fixType", 2),          # GPS_FIX_3D == 2
+                         gps.get("numSat", 12),
                          gps["lat_e7"], gps["lon_e7"], gps["alt_cm"],
                          gps["speed_cms"], gps["course_dd"], *gps["vel_ned_cms"])
     else:
