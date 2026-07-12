@@ -13,9 +13,13 @@ real controller -> mixer outputs -> back into the model.
 ```
 # 1. SITL container (SITL.elf built from the inav feature branch, e.g. via podman ubuntu:24.04)
 #    (MSYS_NO_PATHCONV=1 is only needed in a Windows Git Bash / MSYS shell)
+#    --lockstep is the REFERENCE mode: the FC clock advances exactly 1 ms per
+#    injected MSP_SIMULATOR frame, timing is deterministic and host-load-free.
+#    Pass --lockstep to jsbsim_fly.py / gust_matrix.py as well then (phase
+#    durations count sim time). Drop both flags for wall-clock runs.
 MSYS_NO_PATHCONV=1 podman run -d --name inav-sitl -p 5760:5760 \
   -v "<path-to>/inav:/src" -v "<path-to>/inav-sitl-bench/fcdata:/work" \
-  -w /work ubuntu:24.04 /src/build_sitl_linux/bin/SITL.elf
+  -w /work ubuntu:24.04 /src/build_sitl_linux/bin/SITL.elf --lockstep
 
 # 2. one-time FC provisioning, then restart
 python bench.py provision && podman restart inav-sitl
