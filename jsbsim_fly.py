@@ -43,7 +43,8 @@ MSP_BOXIDS = 119
 MSP_ACTIVEBOXES = 113
 MSP_ALTITUDE = 109
 PERM_NAME = {69: "INVERT", 70: "KNIFE L", 71: "KNIFE R", 72: "P-HANG",
-             74: "F ROLL", 75: "F LOOP", 76: "F 4PT", 77: "F SEQ"}
+             74: "F ROLL", 75: "F LOOP", 76: "F 4PT", 77: "F SEQ",
+             79: "FLAT SPIN"}
 
 def fc_alt_m(m):
     p = m.request(MSP_ALTITUDE)          # int32 estimated altitude [cm], ...
@@ -275,9 +276,22 @@ MAN_RC = {   # SEL detents: 1270 INVERT / 1510 KN L / 1750 KN R / 1985 HANG
     "roll_hold":   dict(invert=1575),                 # F ROLL band, own switch mid
     "floor_dive":  dict(angle=RC_HIGH, invert=1900),  # FLOOR switch high
     "flat_spin":   dict(),                            # pro-spin sticks in ACRO, then ANGLE recovery
+    "f_spin":      dict(angle=1575),                  # F SEQ: controlled flat spin figure
+    "fspin_mode":  dict(invert=1300),                 # FLAT SPIN flight mode (pilot rudder)
     "tvc_hang":    dict(sel=1985),                    # prop hang on the TVC pusher delta
 }[MAN]
 thrM = 1500 if MAN in ("hang", "tvc_hang") else 1650   # level trim; holds start stable (hang: hover PID owns)
+
+if MAN == "f_spin":
+    # controlled flat spin figure: settle level -> stall kick (IMPULSE) ->
+    # SPIN(2 turns, full rudder) with roll/pitch actively held flat ->
+    # level hold with assist
+    FIGSEG_END, FIGSEG_WAIT_TIME, FIGSEG_IMPULSE, FIGSEG_SPIN = 0, 5, 6, 8
+    m.set_figure_segment(0, FIGSEG_WAIT_TIME, p3=1500, flags=1)
+    m.set_figure_segment(1, FIGSEG_IMPULSE, p1=100, p2=100, p3=700)
+    m.set_figure_segment(2, FIGSEG_SPIN, p1=2, p2=100, p3=12000)
+    m.set_figure_segment(3, FIGSEG_WAIT_TIME, p3=4000, flags=1)
+    m.set_figure_segment(4, FIGSEG_END)
 
 # --- MANUAL: pilot flies by hand in ANGLE so the sticks visibly move,
 #     then we flip the figure switch -> the sequence takes over ---
@@ -312,6 +326,22 @@ elif MAN in ("hang", "tvc_hang"):
     loop(8, MAN, rc_ch(thr=thrM, arm=RC_HIGH, angle=RC_LOW, **MAN_RC), print_every=0.7)
     # exit transition: drop the target, ANGLE catches it back to level flight
     loop(8, "exit", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
+elif MAN == "fspin_mode":
+    # FLAT SPIN as a flight mode: box on holds the attitude flat, the
+    # pilot's rudder drives the autorotation (idle throttle, full rudder),
+    # releasing the rudder stops the rotation with the attitude still
+    # held, releasing the box recovers to ANGLE
+    loop(3, "flat-hold", rc_ch(thr=1650, arm=RC_HIGH, **MAN_RC), print_every=0.7)
+    loop(10, "spin-rud", rc_ch(thr=1000, arm=RC_HIGH, rud=2000, **MAN_RC), print_every=0.7)
+    loop(5, "rud-release", rc_ch(thr=1650, arm=RC_HIGH, **MAN_RC), print_every=0.7)
+    loop(5, "exit", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
+elif MAN == "f_spin":
+    # figure runs on its own; idle throttle for the spin itself, then power
+    # back for the level recovery segment
+    loop(3, "f-settle", rc_ch(thr=1650, arm=RC_HIGH, **MAN_RC), print_every=0.7)
+    loop(14, "f-spin", rc_ch(thr=1000, arm=RC_HIGH, **MAN_RC), print_every=0.7)
+    loop(6, "f-level", rc_ch(thr=1650, arm=RC_HIGH, **MAN_RC), print_every=0.7)
+    loop(5, "exit", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
 elif MAN == "inverted_stick":
     # ANGLE-semantics stick offsets: half aileron must carve a HELD angle
     # offset from the inverted reference (not a rate), releasing returns
