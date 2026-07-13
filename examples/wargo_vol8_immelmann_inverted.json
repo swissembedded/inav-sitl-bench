@@ -2,9 +2,9 @@
   "name": "wargo_vol8_immelmann_inverted",
   "segments": [
     {
-      "type": "wait_alt",
-      "altitude_m": 30,
-      "tolerance_m": 3
+      "type": "wait_time",
+      "ms": 2000,
+      "assist": true
     },
     {
       "type": "pitch",
@@ -31,5 +31,6 @@
       "ms": 1500,
       "assist": true
     }
-  ]
+  ],
+  "note": "wait_alt(30) from the video replaced by wait_time for the bench (no descent owner in SITL, see veloxity_3d_demo)"
 }

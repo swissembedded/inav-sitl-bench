@@ -323,6 +323,8 @@ MAN_RC = {   # SEL detents: 1270 INVERT / 1510 KN L / 1750 KN R / 1985 HANG
     "hang_tvc":    dict(sel=1985),                    # prop hang on the TVC pusher delta
     "seq":         dict(angle=1575),                  # F SEQ band: flies whatever
                                                       # sequence figure_script.py programmed
+    "seq_chain":   dict(angle=1575),                  # three routines back-to-back,
+                                                      # reprogrammed via MSP between legs
 }[MAN]
 thrM = 1500 if MAN in ("hang", "hang_tvc") else 1650   # level trim; holds start stable (hang: hover PID owns)
 
@@ -431,6 +433,25 @@ elif MAN == "seq":
     # full power through the figures, the sequencer owns the trajectory
     loop(90, "seq", rc_ch(thr=1800, arm=RC_HIGH, **MAN_RC), print_every=0.7)
     loop(6, "exit", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
+elif MAN == "seq_chain":
+    # three routines in ONE flight: the runner reprograms the sequence via
+    # MSP between the legs (the segment setter is live, no eeprom save) and
+    # re-enters F SEQ for each - the box edge restarts at segment 0
+    import json as _json
+    from figure_script import compile_script as _compile, MAX_SEGMENTS as _MAXSEG, FIGSEG_END as _END
+    CHAIN = [("examples/veloxity_3d_demo.json", 58),
+             ("examples/wargo_vol8_immelmann_inverted.json", 26),
+             ("examples/wargo_gyro_knife_pass.json", 26)]
+    for _path, _secs in CHAIN:
+        _c = _compile(_json.load(open(_path, encoding="utf-8")))
+        for _i, _seg in enumerate(_c):
+            m.set_figure_segment(_i, *_seg)
+        for _i in range(len(_c), _MAXSEG):
+            m.set_figure_segment(_i, _END)
+        _leg = _path.rsplit("/", 1)[-1].removesuffix(".json")
+        loop(_secs, f"seq {_leg}", rc_ch(thr=1800, arm=RC_HIGH, angle=1575), print_every=0.7)
+        loop(4, "between", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH), print_every=1)
+    loop(3, "exit", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
 elif MAN == "inverted_stick":
     # ANGLE-semantics stick offsets: half aileron must carve a HELD angle
     # offset from the inverted reference (not a rate), releasing returns

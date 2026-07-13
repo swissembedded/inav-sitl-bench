@@ -6,9 +6,9 @@
       "degrees": 35
     },
     {
-      "type": "wait_alt",
-      "altitude_m": 30,
-      "tolerance_m": 3
+      "type": "wait_time",
+      "ms": 2000,
+      "assist": true
     },
     {
       "type": "roll",
@@ -17,7 +17,7 @@
     },
     {
       "type": "hold",
-      "roll_deg": 90,
+      "roll_deg": -90,
       "pitch_deg": 0,
       "ms": 7000,
       "assist": true
@@ -32,5 +32,6 @@
       "ms": 2000,
       "assist": true
     }
-  ]
+  ],
+  "note": "wait_alt(30) from the video replaced by wait_time for the bench (no descent owner in SITL, see veloxity_3d_demo)"
 }

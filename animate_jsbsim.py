@@ -130,6 +130,13 @@ axPb.plot(t, z, "#2ca02c", lw=1.4, label="alt truth")
 axPb.plot(t, fc_alt, "#2ca02c", lw=1.0, ls="--", label="alt meas (baro)")
 axPb.plot(t, [v * 100 for v in fc_thr], "#ff7f0e", lw=1.0, label="thrust [%]")
 axPb.set_ylabel("IAS [kts] / alt [m] / thr [%]", fontsize=8)
+# the safety floor is the whole story of the floor maneuvers - draw it
+# (alt_floor_altitude = 30 m over the arming baro zero ~ first logged alt)
+FLOOR_ABS = z[0] + 30 if MAN in ("floor_dive", "floor_spin", "floor_panic") else None
+if FLOOR_ABS is not None:
+    axPb.axhline(FLOOR_ABS, color="#d62728", lw=1.3, ls=":")
+    axPb.axhline(FLOOR_ABS + 10, color="#d62728", lw=0.7, ls=":", alpha=0.4)
+    axPb.text(t[0], FLOOR_ABS + 1, " FLOOR", color="#d62728", fontsize=7, va="bottom")
 axPb.legend(fontsize=7, loc="upper right")
 PREP = ("settle", "cal", "armL", "armH", "level")
 gust_t = [tt for tt, p in zip(t, ph) if p == "gust"]
@@ -179,6 +186,13 @@ _z0 = max(0.0, _cz - L)   # never show below ground
 ax.set_xlim(_cx-L, _cx+L); ax.set_ylim(_cy-L, _cy+L); ax.set_zlim(_z0, _z0 + 2*L)
 ax.set_box_aspect((1, 1, 1))
 S = max(25.0, L / 5.0)   # aircraft symbol scale, relative to the scene
+if FLOOR_ABS is not None:
+    # translucent floor plane in the 3D view: the spin/dive visibly falls
+    # onto it and the catch reads as a catch
+    import numpy as _np
+    _gx, _gy = _np.meshgrid([_cx-L, _cx+L], [_cy-L, _cy+L])
+    ax.plot_surface(_gx, _gy, _np.full_like(_gx, FLOOR_ABS),
+                    color="#d62728", alpha=0.12, zorder=0)
 trail, = ax.plot([], [], [], color="0.6", lw=1.2)
 seg_lines = [ax.plot([], [], [], lw=2.5)[0] for _ in SEGS]
 txt = ax.text2D(0.02, 0.95, "", transform=ax.transAxes, fontsize=10)
