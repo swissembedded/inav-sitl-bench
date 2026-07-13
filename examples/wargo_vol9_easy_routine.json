@@ -60,9 +60,10 @@
       "assist": false
     },
     {
-      "type": "wait_pos",
-      "radius_m": 50,
-      "max_bank_deg": 30
+      "type": "wait_time",
+      "ms": 3000,
+      "assist": true
     }
-  ]
+  ],
+  "note": "Bench variant: wait_pos -> wait_time (jsbsim_fly injects no GPS, the segment never sees a position; on the field it banks toward home)."
 }

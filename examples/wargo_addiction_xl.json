@@ -36,9 +36,9 @@
       "assist": true
     },
     {
-      "type": "wait_pos",
-      "radius_m": 15,
-      "max_bank_deg": 30
+      "type": "wait_time",
+      "ms": 3000,
+      "assist": true
     },
     {
       "type": "hold",
@@ -53,5 +53,5 @@
       "assist": true
     }
   ],
-  "note": "Gemini video extraction; wait_alt raised from the video-real 1 m to a bench-sane 30 m gate"
+  "note": "Bench variant: wait_pos -> wait_time (jsbsim_fly injects no GPS, the segment never sees a position; on the field it banks toward home)."
 }
