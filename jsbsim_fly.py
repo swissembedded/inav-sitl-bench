@@ -378,6 +378,9 @@ elif MAN == "floor_panic":
     loop(14, "climb", rc_ch(thr=1900, arm=RC_HIGH, ele=1800, **MAN_RC), print_every=1)
     loop(26, "dive-chop", rc_ch(thr=1050, arm=RC_HIGH, ele=1150, **MAN_RC), print_every=0.7)
     loop(8, "after", rc_ch(thr=1050, arm=RC_HIGH, **MAN_RC), print_every=0.7)
+    # pilot takeover: after the catch (sticks were centered in "after") a
+    # fresh deflection must end the recovery immediately - ANGLE is back
+    loop(6, "takeover", rc_ch(thr=1650, arm=RC_HIGH, ele=1400, **MAN_RC), print_every=0.7)
 elif MAN == "crash_test":
     # crash detection POSITIVE path: impact spike, then the airframe lies
     # still (frozen plant = frozen baro, 1 g, zero rates, GPS speed 0) ->
