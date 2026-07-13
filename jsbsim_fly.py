@@ -179,7 +179,7 @@ _step_clock = [0.0]   # wall-clock of the last plant step (see loop below)
 
 _frames = [0]      # injected frames = sim time in ms (lockstep time base)
 
-def loop(secs, phase, rc, thr_override=None, print_every=1.0, freeze=False):
+def loop(secs, phase, rc, thr_override=None, print_every=1.0, freeze=False, gps=None):
     """freeze=True: hold the plant motionless (clean static IC while the FC
     settles/calibrates/arms disarmed) -- sensors still stream."""
     last = 0.0
@@ -192,7 +192,7 @@ def loop(secs, phase, rc, thr_override=None, print_every=1.0, freeze=False):
         # NOTE: no GPS injection for now. Injecting our GPS (even only while
         # upright) biases the AHRS pitch via the COG/vel fusion -- revisit
         # together with the lock-quality-gated altitude-source feature.
-        r = sim_step(m, plant.acc_mg(), plant.gyro_dps16(), rc, baro_pa=plant.baro_pa())
+        r = sim_step(m, plant.acc_mg(), plant.gyro_dps16(), rc, baro_pa=plant.baro_pa(), gps=gps)
         t_msp = time.perf_counter()
         ail = -r.stab_roll if FLIP_AIL else r.stab_roll
         ele = -r.stab_pitch if FLIP_ELE else r.stab_pitch
@@ -313,6 +313,9 @@ MAN_RC = {   # SEL detents: 1270 INVERT / 1510 KN L / 1750 KN R / 1985 HANG
     "roll_hold":   dict(invert=1575),                 # F ROLL band, own switch mid
     "loop_fig":    dict(angle=1300),                  # F LOOP band on the ANGLE channel
     "floor_dive":  dict(angle=RC_HIGH, invert=1900),  # FLOOR switch high
+    "floor_panic": dict(angle=RC_HIGH, invert=1900),  # dive with the throttle CHOPPED
+    "crash_test":  dict(angle=RC_HIGH),               # impact + stillness -> motor cut + gesture
+    "snap_neg":    dict(angle=RC_HIGH),               # impact + keeps flying -> must NOT cut
     "flat_spin":   dict(invert=1300),                 # FLAT SPIN flight mode (pilot rudder)
     "inv_spin":    dict(sel=1270, invert=1300),       # FSPIN + INVERTED: inverted flat spin
     "knife_spin":  dict(sel=1510, invert=1300),       # FSPIN + KNIFE L: knife edge spin
@@ -366,6 +369,42 @@ elif MAN in ("flat_spin", "inv_spin", "knife_spin"):
     loop(10, "spin-rud", rc_ch(thr=1000, arm=RC_HIGH, rud=2000, **MAN_RC), print_every=0.7)
     loop(5, "rud-release", rc_ch(thr=1650, arm=RC_HIGH, **MAN_RC), print_every=0.7)
     loop(5, "exit", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
+elif MAN == "floor_panic":
+    # dive with the throttle CHOPPED (the panic case): the recovery climb
+    # must get its own energy (cruise + pitch-to-throttle floor), the motor
+    # must keep RUNNING through the low stick, and the held down-elevator
+    # must not drag the recovery target down (stick rates suppressed)
+    loop(3, "arm-floor", rc_ch(thr=1700, arm=RC_HIGH, **MAN_RC), print_every=1)
+    loop(14, "climb", rc_ch(thr=1900, arm=RC_HIGH, ele=1800, **MAN_RC), print_every=1)
+    loop(26, "dive-chop", rc_ch(thr=1050, arm=RC_HIGH, ele=1150, **MAN_RC), print_every=0.7)
+    loop(8, "after", rc_ch(thr=1050, arm=RC_HIGH, **MAN_RC), print_every=0.7)
+elif MAN == "crash_test":
+    # crash detection POSITIVE path: impact spike, then the airframe lies
+    # still (frozen plant = frozen baro, 1 g, zero rates, GPS speed 0) ->
+    # motor cut ~1.5 s later; throttle low-then-up gesture re-allows it
+    GPS_STILL = dict(lat_e7=473970000, lon_e7=85400000, alt_cm=12000,
+                     speed_cms=0, course_dd=0, vel_ned_cms=(0, 0, 0))
+    loop(5, "cruise", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH), print_every=1, gps=GPS_STILL)
+    for _ in range(300):   # 0.3 s impact spike > 8 g
+        sim_step(m, (0.0, 0.0, 12000.0), plant.gyro_dps16(),
+                 rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH), baro_pa=plant.baro_pa(), gps=GPS_STILL)
+        _frames[0] += 1
+    loop(4, "still", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH), print_every=0.5, freeze=True, gps=GPS_STILL)
+    loop(1.5, "ack-low", rc_ch(thr=1000, arm=RC_HIGH, angle=RC_HIGH), print_every=0.5, freeze=True, gps=GPS_STILL)
+    loop(3, "re-up", rc_ch(thr=1400, arm=RC_HIGH, angle=RC_HIGH), print_every=0.5, freeze=True, gps=GPS_STILL)
+elif MAN == "snap_neg":
+    # crash detection NEGATIVE path: the same spike, but the aircraft keeps
+    # flying - including the hard case of a smooth level line right after
+    # the pull, which only the GPS ground speed can tell from lying still
+    GPS_MOVE = dict(lat_e7=473970000, lon_e7=85400000, alt_cm=12000,
+                    speed_cms=1800, course_dd=0, vel_ned_cms=(1800, 0, 0))
+    loop(5, "cruise", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH), print_every=1, gps=GPS_MOVE)
+    for _ in range(300):
+        sim_step(m, (0.0, 0.0, 12000.0), plant.gyro_dps16(),
+                 rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH), baro_pa=plant.baro_pa(), gps=GPS_MOVE)
+        _frames[0] += 1
+    loop(5, "flyon", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH, ail=1800), print_every=0.5, gps=GPS_MOVE)
+    loop(6, "flyon2", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH, ail=1300), print_every=0.5, gps=GPS_MOVE)
 elif MAN == "seq":
     # fly whatever sequence figure_script.py programmed (video pipeline):
     # full power through the figures, the sequencer owns the trajectory
