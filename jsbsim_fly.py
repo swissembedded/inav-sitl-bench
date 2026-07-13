@@ -314,6 +314,7 @@ MAN_RC = {   # SEL detents: 1270 INVERT / 1510 KN L / 1750 KN R / 1985 HANG
     "loop_fig":    dict(angle=1300),                  # F LOOP band on the ANGLE channel
     "floor_dive":  dict(angle=RC_HIGH, invert=1900),  # FLOOR switch high
     "floor_panic": dict(angle=RC_HIGH, invert=1900),  # dive with the throttle CHOPPED
+    "floor_spin":  dict(sel=1270, invert=1900),       # inverted flat spin INTO the floor
     "crash_test":  dict(angle=RC_HIGH),               # impact + stillness -> motor cut + gesture
     "snap_neg":    dict(angle=RC_HIGH),               # impact + keeps flying -> must NOT cut
     "flat_spin":   dict(invert=1300),                 # FLAT SPIN flight mode (pilot rudder)
@@ -369,6 +370,19 @@ elif MAN in ("flat_spin", "inv_spin", "knife_spin"):
     loop(10, "spin-rud", rc_ch(thr=1000, arm=RC_HIGH, rud=2000, **MAN_RC), print_every=0.7)
     loop(5, "rud-release", rc_ch(thr=1650, arm=RC_HIGH, **MAN_RC), print_every=0.7)
     loop(5, "exit", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
+elif MAN == "floor_spin":
+    # inverted flat spin INTO the floor: the INVERTED hold + held rudder IS
+    # an inverted flat spin (yaw stays the pilot's rate stick on the free
+    # axis) and leaves the invert channel on the FLOOR band - the FSPIN box
+    # would collide with it (both live on the invert channel). Idle power,
+    # the spin trundles down; the recovery must override the held preset,
+    # roll upright out of the rotation and climb out on its own throttle.
+    loop(3, "arm-floor", rc_ch(thr=1700, arm=RC_HIGH, angle=RC_HIGH, invert=1900), print_every=1)
+    loop(14, "climb", rc_ch(thr=1900, arm=RC_HIGH, ele=1800, angle=RC_HIGH, invert=1900), print_every=1)
+    loop(5, "inv-hold", rc_ch(thr=1650, arm=RC_HIGH, **MAN_RC), print_every=0.7)
+    loop(14, "inv-spin", rc_ch(thr=1050, arm=RC_HIGH, rud=2000, **MAN_RC), print_every=0.7)
+    loop(10, "caught", rc_ch(thr=1050, arm=RC_HIGH, **MAN_RC), print_every=0.7)
+    loop(5, "exit", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH, invert=1900), print_every=0.7)
 elif MAN == "floor_panic":
     # dive with the throttle CHOPPED (the panic case): the recovery climb
     # must get its own energy (cruise + pitch-to-throttle floor), the motor
