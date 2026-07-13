@@ -51,3 +51,37 @@ What the orientation-hold controller must reproduce, per figure:
 The replay videos plot exactly this ownership: pilot sticks stay centered
 (controller IN) while the control-surface commands (controller OUT) do the
 work described above for the human pilot.
+
+---
+
+## Trimming checklist (before tuning any hold)
+
+Setup order for a new airframe: physical trims first, then the
+controller's per-attitude trims, then hover gains, then figure rates.
+Condensed from Michael Wargo's "Dialing it in" setup flight.
+
+1. **Baseline level trim** - elevator/aileron/rudder in straight upright
+   cruise, hands off. Rudder mis-trim is easiest to see on a
+   zero-throttle vertical downline: the tail wags or tracks sideways.
+2. **CG before software** - climb 45 deg at cruise, roll inverted, let
+   go of the elevator: tail-heavy balloons toward the canopy,
+   nose-heavy dives. Move the battery until only a breath of down
+   stick holds the line - NEVER paper over a bad CG with the
+   controller's inverted pitch trim; lock the residual in as
+   `ohold_inverted_pitch_trim` afterwards.
+3. **Knife edge coupling, per side** - sustained knife edge on right
+   rudder, then a separate pass on left rudder: pitch coupling tucks
+   toward canopy or pulls toward the gear. Airframes are never
+   symmetric (prop torque, structure) - tune
+   `ohold_knife_left_pitch_trim` and `ohold_knife_right_pitch_trim`
+   as fully independent settings, one side at a time.
+4. **Thrust line / downline** - full-power upline must not yank or
+   roll; a zero-throttle downline that pulls toward the canopy wants
+   1-2% down-elevator mixed in at closed throttle (airfoil lift).
+5. **Aileron differential** - a long slow roll must stay on its
+   string; barreling or heading drift means uneven up/down aileron
+   travel.
+
+Then, in this order: hover gains (the limit-cycle learner needs a
+trimmed airframe to converge on damping, not on trim offsets), then
+figure rates and the altitude assist.
