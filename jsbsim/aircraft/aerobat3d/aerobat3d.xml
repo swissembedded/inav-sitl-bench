@@ -223,6 +223,18 @@
           <value> 0.30 </value>
         </product>
       </function>
+      <function name="aero/moment/Roll_aileron_propwash">
+        <description>Prop-wash aileron authority (see Pitch_elevator_propwash);
+          half the 35 kts equivalent - the ailerons sit outboard, only the
+          inner span rides in the wash. Without this the prop reaction
+          torque rolls the hang with nothing to counter it; a real 3D
+          airframe holds the torque roll on its washed full-span ailerons.</description>
+        <product>
+          <property>fcs/throttle-cmd-norm</property>
+          <property>fcs/aileron-pos-norm</property>
+          <value> 13.5 </value>
+        </product>
+      </function>
     </axis>
     <axis name="PITCH">
       <function name="aero/moment/Pitch_alpha">
