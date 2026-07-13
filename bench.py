@@ -216,9 +216,15 @@ def smoke():
     assert r.airplane, "platform is not AIRPLANE - run provision first"
 
     print("-- gyro sign check: +20 dps roll for 1 s (open loop)")
-    for _ in range(100):
+    # lockstep SITL: the FC advances exactly its 1 ms tick per injected
+    # frame (NOT this script's DT), so "1 s" is 1000 frames - 100 slept
+    # frames are only 0.1 s of FC time and the roll integrates to ~2 deg,
+    # a false FAIL
+    lockstep = "--lockstep" in sys.argv
+    for _ in range(1000 if lockstep else 100):
         r = sim_step(msp, plane.acc_mg(), (20 * 16, 0, 0), rc)
-        time.sleep(DT)
+        if not lockstep:
+            time.sleep(DT)
     print(f"   FC roll now {r.att_roll_deg:+.1f} (expect positive, ~ +20 steady-state; "
           f"lower right after boot while the AHRS runs boosted acc gain)")
     assert 5 < r.att_roll_deg < 35, "gyro roll sign/scale mismatch"
