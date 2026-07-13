@@ -371,17 +371,21 @@ elif MAN in ("flat_spin", "inv_spin", "knife_spin"):
     loop(5, "rud-release", rc_ch(thr=1650, arm=RC_HIGH, **MAN_RC), print_every=0.7)
     loop(5, "exit", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
 elif MAN == "floor_spin":
-    # inverted flat spin INTO the floor: the INVERTED hold + held rudder IS
-    # an inverted flat spin (yaw stays the pilot's rate stick on the free
-    # axis) and leaves the invert channel on the FLOOR band - the FSPIN box
-    # would collide with it (both live on the invert channel). Idle power,
-    # the spin trundles down; the recovery must override the held preset,
-    # roll upright out of the rotation and climb out on its own throttle.
+    # FLAT SPIN into the floor. FSPIN and FLOOR share the invert channel
+    # (bands 1150-1450 / 1700-2100), so for this maneuver the FLOOR mode
+    # range is MOVED onto the FSPIN band via MSP: invert=1300 then
+    # activates both, the floor re-arms instantly (still above floor +
+    # margin) and the recovery must catch the autorotation. The range is
+    # restored before the script ends - the disarm save would otherwise
+    # persist the remap into the eeprom.
+    from bench import PERM_ALTFLOOR, CH_INVERTED
     loop(3, "arm-floor", rc_ch(thr=1700, arm=RC_HIGH, angle=RC_HIGH, invert=1900), print_every=1)
     loop(14, "climb", rc_ch(thr=1900, arm=RC_HIGH, ele=1800, angle=RC_HIGH, invert=1900), print_every=1)
-    loop(5, "inv-hold", rc_ch(thr=1650, arm=RC_HIGH, **MAN_RC), print_every=0.7)
-    loop(14, "inv-spin", rc_ch(thr=1050, arm=RC_HIGH, rud=2000, **MAN_RC), print_every=0.7)
-    loop(10, "caught", rc_ch(thr=1050, arm=RC_HIGH, **MAN_RC), print_every=0.7)
+    m.set_mode_range(6, PERM_ALTFLOOR, CH_INVERTED - 4, 1150, 1450)
+    loop(4, "spin-hold", rc_ch(thr=1650, arm=RC_HIGH, invert=1300), print_every=0.7)
+    loop(14, "flat-spin", rc_ch(thr=1000, arm=RC_HIGH, rud=2000, invert=1300), print_every=0.7)
+    loop(10, "caught", rc_ch(thr=1050, arm=RC_HIGH, invert=1300), print_every=0.7)
+    m.set_mode_range(6, PERM_ALTFLOOR, CH_INVERTED - 4, 1700, 2100)
     loop(5, "exit", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH, invert=1900), print_every=0.7)
 elif MAN == "floor_panic":
     # dive with the throttle CHOPPED (the panic case): the recovery climb
@@ -425,7 +429,7 @@ elif MAN == "snap_neg":
 elif MAN == "seq":
     # fly whatever sequence figure_script.py programmed (video pipeline):
     # full power through the figures, the sequencer owns the trajectory
-    loop(60, "seq", rc_ch(thr=1800, arm=RC_HIGH, **MAN_RC), print_every=0.7)
+    loop(90, "seq", rc_ch(thr=1800, arm=RC_HIGH, **MAN_RC), print_every=0.7)
     loop(6, "exit", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
 elif MAN == "inverted_stick":
     # ANGLE-semantics stick offsets: half aileron must carve a HELD angle

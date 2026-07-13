@@ -255,8 +255,13 @@ NOTES = {
     "knife_spin":  "KNIFE EDGE SPIN: FLAT SPIN box + KNIFE L holds the edge while the rudder command distributes onto the body pitch axis - the rotation about the vertical that the knife attitude leaves free.",
     "inverted_stick": "Stick carving around the inverted reference: half aileron is a HELD angle offset (not a rate), releasing returns the target gently; then the same on the elevator, where the pilot owns the altitude and the assist yields.",
     "loop_fig":    "Full loop at fig_loop_rate under full power, closing on the entry altitude; the level hold with assist settles afterwards.",
+    "floor_spin":  "Safety floor vs FLAT SPIN: the autorotation trundles down at idle; the floor recovery overrides the spin, rolls upright out of the rotation and climbs out on its own throttle floor.",
+    "floor_panic": "Safety floor, panic case: throttle chopped and down-elevator held through the dive - the catch suppresses the held stick and brings its own throttle floor for the climb.",
 }
-fig.text(0.5, 0.975, NOTES.get(MAN, ""), ha="center", va="top",
+# --title "<text>" overrides the built-in note (sequence videos carry the
+# name of the routine that was programmed, not a fixed maneuver blurb)
+TITLE = sys.argv[sys.argv.index("--title") + 1] if "--title" in sys.argv else None
+fig.text(0.5, 0.975, TITLE or NOTES.get(MAN, ""), ha="center", va="top",
          fontsize=9, style="italic", wrap=True)
 
 def frame(i):

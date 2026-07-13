@@ -1,0 +1,36 @@
+{
+  "name": "wargo_gyro_knife_pass",
+  "segments": [
+    {
+      "type": "pitch",
+      "degrees": 35
+    },
+    {
+      "type": "wait_alt",
+      "altitude_m": 30,
+      "tolerance_m": 3
+    },
+    {
+      "type": "roll",
+      "degrees": -90,
+      "assist": true
+    },
+    {
+      "type": "hold",
+      "roll_deg": 90,
+      "pitch_deg": 0,
+      "ms": 7000,
+      "assist": true
+    },
+    {
+      "type": "roll",
+      "degrees": 90,
+      "assist": true
+    },
+    {
+      "type": "wait_time",
+      "ms": 2000,
+      "assist": true
+    }
+  ]
+}
