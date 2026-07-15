@@ -45,11 +45,12 @@ PERM_INVERTED, PERM_KNIFELEFT, PERM_KNIFERIGHT, PERM_PROPHANG = 69, 70, 71, 72
 PERM_ALTFLOOR = 73
 PERM_FIGROLL, PERM_FIGLOOP, PERM_FIGPOINTROLL, PERM_FIGSEQ = 74, 75, 76, 77
 PERM_FSPIN = 79
-RC_ALTFLOOR_ON = 1900   # ALT FLOOR band on the CH_INVERTED channel (1700-2100;
-                        # 1150-1450 on the same channel is FLAT SPIN)
-RC_FIGROLL_ON = 1575    # FIGURE ROLL band on the CH_INVERTED channel
-RC_FIGLOOP_ON = 1300    # FIGURE LOOP band on the CH_ANGLE channel
-RC_FIGSEQ_ON = 1575     # FIGURE SEQ band on the CH_ANGLE channel
+RC_ALTFLOOR_ON = 1900   # ALT FLOOR is ALONE on CH_INVERTED (1700-2100), a
+                        # dedicated switch toggled independently of the flight mode
+RC_FSPIN_ON   = 1375    # FLAT SPIN band on the CH_ANGLE flight-mode selector
+RC_FIGLOOP_ON = 1225    # FIGURE LOOP band on the CH_ANGLE selector
+RC_FIGSEQ_ON  = 1525    # FIGURE SEQ band on the CH_ANGLE selector
+RC_FIGROLL_ON = 1675    # FIGURE ROLL band on the CH_ANGLE selector
 
 # figure sequence segment types (figure_sequencer.h)
 FIGSEG_END, FIGSEG_ROLL, FIGSEG_PITCH, FIGSEG_HOLD, FIGSEG_WAIT_ALT, FIGSEG_WAIT_TIME = range(6)
@@ -101,20 +102,26 @@ def provision():
     msp.set_servo_mixer_rule(2, 2, 2)   # servo 2 <- stabilized yaw
     msp.set_servo_mixer_rule(3, 3, 62)  # servo 3 <- TVC pitch (thrust vectoring)
     msp.set_mode_range(0, PERM_ARM, CH_ARM - 4, 1700, 2100)
-    msp.set_mode_range(1, PERM_ANGLE, CH_ANGLE - 4, 1700, 2100)
-    # SEL = attitude-target selector (off / INVERT / KNIFE L / KNIFE R / HANG),
-    # so the FLOOR gets its own switch travel and combines with ANY attitude
+    # Three switches, no mode ever shares a position with a mutually-exclusive
+    # one and no range is ever remapped in flight:
+    #   CH_ANGLE  = flight-mode selector (one of these at a time):
+    #               FIGLOOP / FSPIN / FIGSEQ / FIGROLL / ANGLE
+    #   CH_INVERTED = FLOOR, ALONE on its own switch, so it can be armed once
+    #               and left on independently of whatever flight mode is picked
+    #   CH_SELECT = attitude-target selector: off / INVERT / KNIFE L / KNIFE R /
+    #               HANG; combines with FSPIN to give inverted / knife-edge spins
+    msp.set_mode_range(1, PERM_ANGLE, CH_ANGLE - 4, 1750, 2100)
     msp.set_mode_range(2, PERM_INVERTED, CH_SELECT - 4, 1150, 1390)
     msp.set_mode_range(3, PERM_KNIFELEFT, CH_SELECT - 4, 1390, 1630)
     msp.set_mode_range(4, PERM_KNIFERIGHT, CH_SELECT - 4, 1630, 1870)
     msp.set_mode_range(5, PERM_PROPHANG, CH_SELECT - 4, 1870, 2100)
     msp.set_mode_range(6, PERM_ALTFLOOR, CH_INVERTED - 4, 1700, 2100)
-    msp.set_mode_range(7, PERM_FIGROLL, CH_INVERTED - 4, 1450, 1700)
-    msp.set_mode_range(8, PERM_FIGLOOP, CH_ANGLE - 4, 1150, 1450)
-    msp.set_mode_range(9, PERM_FIGSEQ, CH_ANGLE - 4, 1450, 1700)
+    msp.set_mode_range(7, PERM_FIGROLL, CH_ANGLE - 4, 1600, 1750)
+    msp.set_mode_range(8, PERM_FIGLOOP, CH_ANGLE - 4, 1150, 1300)
+    msp.set_mode_range(9, PERM_FIGSEQ, CH_ANGLE - 4, 1450, 1600)
     # slot 10 MUST stay contiguous: the FC compacts the mode-range list at
     # the first gap on save, a gapped slot silently disappears after reboot
-    msp.set_mode_range(10, PERM_FSPIN, CH_INVERTED - 4, 1150, 1450)
+    msp.set_mode_range(10, PERM_FSPIN, CH_ANGLE - 4, 1300, 1450)
     # tuned against the JSBSim aerobat3d plant (2026-07-10): altitude spans
     # over a 22 s figure: inverted 3.1 m, roll_hold 1.1 m, knife L/R 6 m
     # (slightly sinking, never climbing)
@@ -581,7 +588,7 @@ def figures():
     # A: roll without altitude assist
     msp.set_setting("fig_assist_z_gain", struct.pack("<B", 0))
     msp.set_setting("fig_assist_vz_gain", struct.pack("<B", 0))
-    align_a, drift_a, rend_a, zend_a = run_figure(CH_INVERTED, RC_FIGROLL_ON, 9.0)
+    align_a, drift_a, rend_a, zend_a = run_figure(CH_ANGLE, RC_FIGROLL_ON, 9.0)
     print(f"roll no-assist : inverted-pass {align_a:+.2f}  max |dz| {drift_a:5.1f} m  "
           f"end |dz| {zend_a:5.1f} m  end roll {rend_a:5.1f} deg")
     relevel()
@@ -589,7 +596,7 @@ def figures():
     # B: roll with altitude assist (defaults)
     msp.set_setting("fig_assist_z_gain", struct.pack("<B", 20))
     msp.set_setting("fig_assist_vz_gain", struct.pack("<B", 1))
-    align_b, drift_b, rend_b, zend_b = run_figure(CH_INVERTED, RC_FIGROLL_ON, 9.0)
+    align_b, drift_b, rend_b, zend_b = run_figure(CH_ANGLE, RC_FIGROLL_ON, 9.0)
     print(f"roll assist    : inverted-pass {align_b:+.2f}  max |dz| {drift_b:5.1f} m  "
           f"end |dz| {zend_b:5.1f} m  end roll {rend_b:5.1f} deg")
     relevel()
@@ -761,11 +768,8 @@ def hover():
     plane = PlaneModel()
     rc = rc_neutral()
 
-    # gains tuned for this plant (defaults are conservative; tuning is what
-    # the pilot does on the real model via the GUI)
-    msp.set_setting("ohold_hover_thr_p", struct.pack("<B", 60))
-    msp.set_setting("ohold_hover_thr_i", struct.pack("<B", 40))
-    msp.set_setting("ohold_hover_thr_d", struct.pack("<B", 80))
+    # hover throttle gains are DERIVED from the learned hover point in the
+    # firmware (former ohold_hover_thr_p/i/d settings are gone)
 
     wait_boot_calibration(msp)
     settle_until_level(msp, plane, rc)

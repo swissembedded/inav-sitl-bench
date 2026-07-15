@@ -76,8 +76,13 @@ class _SerialAsSocket:
 
 
 class MspClient:
-    def __init__(self, host: str = "127.0.0.1", port: int = 5760, timeout: float = 3.0,
+    def __init__(self, host: str = "127.0.0.1", port: int = None, timeout: float = 3.0,
                  baud: int = 115200):
+        if port is None:
+            # INAV_MSP_PORT selects a parallel SITL instance (e.g. a second
+            # container for verification flights while a suite runs on 5760)
+            import os
+            port = int(os.environ.get("INAV_MSP_PORT", "5760"))
         if host.upper().startswith("COM") or host.startswith("/dev/"):
             self.sock = _SerialAsSocket(host, baud, timeout)
         else:

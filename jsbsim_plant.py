@@ -55,12 +55,36 @@ class JSBSimPlant:
         self._a_earth = (0.0, 0.0, 0.0)
 
     # --- controls in stabilized-output units (-1..1, throttle 0..1) ---------
+    # Servo rate limits (best aerobatic HV servos, unloaded, 8.4 V):
+    # aileron/elevator ~0.06 s per 60 deg, rudder ~0.10 s per 60 deg (torque
+    # over speed there). With a +-60 deg 3D throw = full normalized range,
+    # full travel takes 2x that: the surfaces physically cannot follow a
+    # faster command, so the plant must not either - a controller that only
+    # works with instant surfaces would be lying to us.
+    SERVO_SLEW_AIL_ELE = 1.0 / 0.06   # normalized units per second
+    SERVO_SLEW_RUD     = 1.0 / 0.10
+
     def set_controls(self, ail, ele, rud, thr01):
+        # commands are TARGETS; step() slews the servo positions toward them
+        # with the real integration span (set_controls has no honest dt)
+        self._servo_cmd = (max(-1.0, min(1.0, ail)),
+                           max(-1.0, min(1.0, ele)),
+                           max(-1.0, min(1.0, rud)))
+        self.fdm["fcs/throttle-cmd-norm"] = max(0.0, min(1.0, thr01))
+
+    def _servo_step(self, span):
+        if not hasattr(self, "_servo_pos"):
+            self._servo_pos = list(getattr(self, "_servo_cmd", (0.0, 0.0, 0.0)))
+        cmd = getattr(self, "_servo_cmd", (0.0, 0.0, 0.0))
+        for i, slew in enumerate((self.SERVO_SLEW_AIL_ELE,
+                                  self.SERVO_SLEW_AIL_ELE,
+                                  self.SERVO_SLEW_RUD)):
+            step = slew * span
+            self._servo_pos[i] += max(-step, min(step, cmd[i] - self._servo_pos[i]))
         f = self.fdm
-        f["fcs/aileron-cmd-norm"] = max(-1.0, min(1.0, ail))
-        f["fcs/elevator-cmd-norm"] = max(-1.0, min(1.0, ele))
-        f["fcs/rudder-cmd-norm"] = max(-1.0, min(1.0, rud))
-        f["fcs/throttle-cmd-norm"] = max(0.0, min(1.0, thr01))
+        f["fcs/aileron-cmd-norm"] = self._servo_pos[0]
+        f["fcs/elevator-cmd-norm"] = self._servo_pos[1]
+        f["fcs/rudder-cmd-norm"] = self._servo_pos[2]
 
     BASE_DT = 0.001   # internal integration step; NEVER integrate coarser
                       # (40 ms steps blow up numerically -> NaN attitude)
@@ -69,6 +93,8 @@ class JSBSimPlant:
         # advance sim time by dt using fixed fine substeps, so the coupling
         # rate (controller loop) is decoupled from the integrator step
         span = self.dt if dt is None else dt
+        self._servo_step(span)
+        self._tvc_step(span)
         n = max(1, int(round(span / self.BASE_DT)))
         if abs(self.fdm.get_delta_t() - self.BASE_DT) > 1e-9:
             self.fdm.set_dt(self.BASE_DT)
@@ -111,11 +137,27 @@ class JSBSimPlant:
         return ((f["position/lat-gc-deg"] - la0) * 111320.0,
                 (f["position/long-gc-deg"] - lo0) * 111320.0 * _m.cos(_m.radians(la0)))
 
+    # The nozzle actuator is a servo too: +-15 deg full deflection driven by
+    # the same 0.06 s/60 deg class as the surfaces -> 15 deg (1.0 norm) in
+    # 0.015 s, full sweep -1..+1 in 0.03 s. Fast, but not instant - and the
+    # TVC hover stands on exactly this actuator.
+    SERVO_SLEW_TVC = 1.0 / 0.015  # normalized units per second
+
     def set_tvc(self, pitch_norm=0.0, yaw_norm=0.0):
-        """Vectored-nozzle deflection, -1..1 (funjet); no-op property on
-        airframes without TVC terms."""
-        self.fdm["fcs/tvc-pitch-norm"] = max(-1.0, min(1.0, pitch_norm))
-        self.fdm["fcs/tvc-yaw-norm"] = max(-1.0, min(1.0, yaw_norm))
+        """Vectored-nozzle deflection targets, -1..1 (funjet); slewed in
+        step() like the surface servos; no-op on airframes without TVC."""
+        self._tvc_cmd = (max(-1.0, min(1.0, pitch_norm)),
+                         max(-1.0, min(1.0, yaw_norm)))
+
+    def _tvc_step(self, span):
+        if not hasattr(self, "_tvc_pos"):
+            self._tvc_pos = list(getattr(self, "_tvc_cmd", (0.0, 0.0)))
+        cmd = getattr(self, "_tvc_cmd", (0.0, 0.0))
+        step = self.SERVO_SLEW_TVC * span
+        for i in range(2):
+            self._tvc_pos[i] += max(-step, min(step, cmd[i] - self._tvc_pos[i]))
+        self.fdm["fcs/tvc-pitch-norm"] = self._tvc_pos[0]
+        self.fdm["fcs/tvc-yaw-norm"] = self._tvc_pos[1]
 
     def set_wind(self, north_ms=0.0, east_ms=0.0, down_ms=0.0):
         """Steady wind / gust in earth frame [m/s]; positive down = downdraft."""

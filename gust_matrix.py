@@ -189,7 +189,12 @@ class Runner:
         return self.plant.rpy(), self.plant.z
 
 
-def restart_container(name="inav-sitl"):
+def restart_container(name=None):
+    if name is None:
+        # INAV_SITL_CONTAINER pairs with INAV_MSP_PORT: a parallel bench
+        # instance must restart ITS OWN container, not the default one
+        import os
+        name = os.environ.get("INAV_SITL_CONTAINER", "inav-sitl")
     subprocess.run(["podman", "restart", name], check=True,
                    stdout=subprocess.DEVNULL)
     time.sleep(3)

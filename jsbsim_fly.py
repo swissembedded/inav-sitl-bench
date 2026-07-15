@@ -32,8 +32,12 @@ LOCKSTEP = "--lockstep" in sys.argv
 
 RC_LOW, RC_MID, RC_HIGH = 1000, 1500, 2000
 # channels: A E T R ARM ANGLE INVERT SELECT  (bench provisioning layout)
-def rc_ch(thr=RC_LOW, arm=RC_LOW, angle=RC_LOW, invert=RC_LOW, sel=RC_LOW, ele=RC_MID, ail=RC_MID, rud=RC_MID):
-    return [ail, ele, thr, rud, arm, angle, invert, sel]
+def rc_ch(thr=RC_LOW, arm=RC_LOW, angle=RC_LOW, floor=RC_LOW, sel=RC_LOW, ele=RC_MID, ail=RC_MID, rud=RC_MID):
+    # angle = flight-mode selector (CH_ANGLE): FIGLOOP 1225 / FSPIN 1375 /
+    #         FIGSEQ 1525 / FIGROLL 1675 / ANGLE >=1750
+    # floor = FLOOR switch (CH_INVERTED), its own channel: >=1700 arms it
+    # sel   = attitude-target selector (CH_SELECT): INVERT / KNIFE L/R / HANG
+    return [ail, ele, thr, rud, arm, angle, floor, sel]
 
 # Real active flight mode, pulled from the FC itself (not re-derived from RC):
 # MSP_BOXIDS gives permanent box ids in active order, MSP_ACTIVEBOXES gives a
@@ -95,13 +99,30 @@ def _positional(argv):
     return out
 
 _man = next(iter(_positional(sys.argv[1:])), "inverted")
-# default start = 120 m (legal RC ceiling); floor_dive trades ~100 m away,
-# so it alone starts higher to leave room for the catch
 _model = "c172p" if "--c172" in sys.argv else ("funjet" if _man == "hang_tvc" else "aerobat3d")
-# 1500 ft for the diagnostic c172 (entry transient), 120 m for everything
-# else -- the altitude floor works relative to the baro zero at start
+# Every flight must stay within ~120 m: that is the legal RC ceiling and above
+# it the aircraft is too small to see in the video. Each maneuver starts at
+# (target apex - its own climb gain) so the peak lands at ~115 m. Descending
+# maneuvers start near the top; climbers start low. The FLOOR demos ARM LOW so
+# the floor (home + 30 m) becomes a low safety net the aircraft dives DOWN
+# into - not a shelf 30 m above a 120 m start that forces a 250 m zoom-climb.
+# An override is available: --start-m <metres>.
+_M2FT = 3.281
+_START_M = {
+    "flat_spin": 108, "inv_spin": 104, "knife_spin": 104,
+    "inverted": 104, "inverted_stick": 96, "knife_left": 103, "knife_right": 102,
+    "hang": 68, "hang_tvc": 40, "loop_fig": 68, "roll_hold": 104,
+    "crash_test": 104, "snap_neg": 104,
+    "floor_dive": 25, "floor_panic": 25, "floor_spin": 25,   # arm low -> low net
+    "seq": 120, "seq_chain": 120,   # aerobatic routines: exempt, they climb high
+}
+_start_m = _START_M.get(_man, 104)
+for _i, _a in enumerate(sys.argv):
+    if _a == "--start-m":
+        _start_m = float(sys.argv[_i + 1])
+# 1500 ft for the diagnostic c172 (entry transient); everything else per map
 plant = JSBSimPlant(model=_model,
-                    alt_ft=1500 if _model == "c172p" else (820 if _man == "flat_spin" else 394))
+                    alt_ft=1500 if _model == "c172p" else round(_start_m * _M2FT))
 # --imu-offset x,y,z [m]: sensor lever arm from the CG (body frame). Off-CG
 # sensors additionally measure w x (w x r) -- constant in the body frame
 # during a steady spin, the false-down pull a CG-mounted model cannot show.
@@ -143,8 +164,7 @@ for _i, _a in enumerate(_argv):
 
 PARAMS = ["fig_roll_rate", "fig_loop_rate", "fig_assist_z_gain", "fig_assist_vz_gain",
           "fig_assist_max", "ohold_inverted_pitch_trim", "ohold_knife_left_pitch_trim",
-          "ohold_knife_right_pitch_trim", "ohold_hover_thr_p", "ohold_hover_thr_i",
-          "ohold_hover_thr_d", "small_angle"]
+          "ohold_knife_right_pitch_trim", "ohold_load_limit", "small_angle"]
 with open(f"jsbsim_params_{_man}.txt", "w") as pf:
     for name in PARAMS:
         try:
@@ -279,19 +299,19 @@ print("boot-cal abwarten (bench-Routine)...")
 from bench import wait_boot_calibration
 wait_boot_calibration(m)
 
-print("=== SETTLE (AHRS an JSBSim angleichen, Plant eingefroren) ===")
+print("=== SETTLE (align the AHRS to JSBSim, plant frozen) ===")
 loop(6, "settle", rc_ch(), freeze=True)
 fr, fp, fy = fc_att(m); jr, jp, jy = plant.rpy()
 print(f"Konventions-Check: FC {fr:+.1f}/{fp:+.1f} vs JS {jr:+.1f}/{jp:+.1f}  "
       f"({'OK' if abs(fr-jr)<15 and abs(fp-jp)<15 else 'MISMATCH -> Vorzeichen pruefen'})")
 
-print("=== CAL (HITL-Stream laufen lassen bis bit9 weg) ===")
+print("=== CAL (run the HITL stream until bit9 clears) ===")
 t0 = time.time()
 while (arming_flags(m) & FLAG_CAL) and time.time() - t0 < 25:
     loop(1.0, "cal", rc_ch(angle=RC_HIGH), print_every=4, freeze=True)
 print("cal fertig, flags=0x%X" % arming_flags(m))
 
-print("=== ARM (Toggle-Zyklen bis ARMED) ===")
+print("=== ARM (toggle cycles until ARMED) ===")
 t0 = time.time()
 while not (arming_flags(m) & FLAG_ARMED) and time.time() - t0 < 20:
     loop(1.0, "armL", rc_ch(thr=RC_LOW, arm=RC_LOW, angle=RC_HIGH), print_every=9, freeze=True)
@@ -300,7 +320,7 @@ print("ARMED:", bool(arming_flags(m) & FLAG_ARMED), f"flags=0x{arming_flags(m):X
 
 # released from the frozen IC only now: level + settle for a few seconds so
 # the whole loop (plant, AHRS, controller) is in steady state before testing
-print("=== ANGLE LEVEL (einschwingen aus sauberer Initialbedingung) ===")
+print("=== ANGLE LEVEL (settle from a clean initial condition) ===")
 loop(6, "level", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH))   # 1450 = level trim (~50 kts, 0 m/min)
 
 MAN = _man
@@ -310,20 +330,20 @@ MAN_RC = {   # SEL detents: 1270 INVERT / 1510 KN L / 1750 KN R / 1985 HANG
     "knife_left":  dict(sel=1510),
     "knife_right": dict(sel=1750),
     "hang":        dict(sel=1985),
-    "roll_hold":   dict(invert=1575),                 # F ROLL band, own switch mid
-    "loop_fig":    dict(angle=1300),                  # F LOOP band on the ANGLE channel
-    "floor_dive":  dict(angle=RC_HIGH, invert=1900),  # FLOOR switch high
-    "floor_panic": dict(angle=RC_HIGH, invert=1900),  # dive with the throttle CHOPPED
-    "floor_spin":  dict(sel=1270, invert=1900),       # inverted flat spin INTO the floor
+    "roll_hold":   dict(angle=1675),                  # FIGROLL band on the mode selector
+    "loop_fig":    dict(angle=1225),                  # FIGLOOP band on the mode selector
+    "floor_dive":  dict(angle=RC_HIGH, floor=1900),   # ANGLE + FLOOR switch on
+    "floor_panic": dict(angle=RC_HIGH, floor=1900),   # dive with the throttle CHOPPED
+    "floor_spin":  dict(floor=1900),                  # flat spin INTO the floor (body sets mode)
     "crash_test":  dict(angle=RC_HIGH),               # impact + stillness -> motor cut + gesture
     "snap_neg":    dict(angle=RC_HIGH),               # impact + keeps flying -> must NOT cut
-    "flat_spin":   dict(invert=1300),                 # FLAT SPIN flight mode (pilot rudder)
-    "inv_spin":    dict(sel=1270, invert=1300),       # FSPIN + INVERTED: inverted flat spin
-    "knife_spin":  dict(sel=1510, invert=1300),       # FSPIN + KNIFE L: knife edge spin
+    "flat_spin":   dict(angle=1375),                  # FSPIN band on the mode selector (pilot rudder)
+    "inv_spin":    dict(sel=1270, angle=1375),        # FSPIN + INVERTED: inverted flat spin
+    "knife_spin":  dict(sel=1510, angle=1375),        # FSPIN + KNIFE L: knife edge spin
     "hang_tvc":    dict(sel=1985),                    # prop hang on the TVC pusher delta
-    "seq":         dict(angle=1575),                  # F SEQ band: flies whatever
+    "seq":         dict(angle=1525),                  # FIGSEQ band: flies whatever
                                                       # sequence figure_script.py programmed
-    "seq_chain":   dict(angle=1575),                  # three routines back-to-back,
+    "seq_chain":   dict(angle=1525),                  # three routines back-to-back,
                                                       # reprogrammed via MSP between legs
 }[MAN]
 thrM = 1500 if MAN in ("hang", "hang_tvc") else 1650   # level trim; holds start stable (hang: hover PID owns)
@@ -331,23 +351,22 @@ thrM = 1500 if MAN in ("hang", "hang_tvc") else 1650   # level trim; holds start
 
 # --- MANUAL: pilot flies by hand in ANGLE so the sticks visibly move,
 #     then we flip the figure switch -> the sequence takes over ---
-print("=== MANUAL (Pilot fliegt von Hand in ANGLE, Sticks bewegen sich) ===")
+print("=== MANUAL (pilot flies by hand in ANGLE, sticks visibly move) ===")
 loop(3, "manual", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH, ail=1250))
 loop(3, "manual", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH, ail=1750))
 loop(3, "manual", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH))
 
-print(f"=== SEQUENCE {MAN} (Umschalten manuell -> Regler) ===")
+print(f"=== SEQUENCE {MAN} (handover manual -> controller) ===")
 if MAN == "floor_dive":
-    # floor arms only after climbing above floor+margin (30+10 m over the
-    # baro zero); then push over and HOLD the stick -- the floor must catch
-    # and level AGAINST the held down-elevator, not because we let go
-    loop(3, "arm-floor", rc_ch(thr=1700, arm=RC_HIGH, **MAN_RC), print_every=1)
-    loop(8, "climb", rc_ch(thr=1900, arm=RC_HIGH, ele=1800, **MAN_RC), print_every=1)
-    loop(14, "dive-held", rc_ch(thr=1700, arm=RC_HIGH, ele=1150, **MAN_RC), print_every=0.7)
-    # contrast pass: floor switch OFF, same held push -> it punches through
-    # the floor plane (climb high enough first, then keep pushing well past it)
-    loop(8, "climb2", rc_ch(thr=1900, arm=RC_HIGH, ele=1800, **MAN_RC), print_every=1)
-    loop(13, "dive-nofloor", rc_ch(thr=1700, arm=RC_HIGH, ele=1150, angle=RC_HIGH), print_every=0.7)
+    # climb in ANGLE (no floor yet), flip the FLOOR switch on well ABOVE the
+    # line, then push over and HOLD down-elevator -- the floor must catch and
+    # level AGAINST the held stick, not because we let go. Then a contrast
+    # pass with the FLOOR switch OFF: the same held push punches through.
+    loop(6, "climb", rc_ch(thr=1900, arm=RC_HIGH, ele=1800, angle=RC_HIGH), print_every=1)
+    loop(2, "arm-floor", rc_ch(thr=1700, arm=RC_HIGH, angle=RC_HIGH, floor=1900), print_every=1)
+    loop(10, "dive-held", rc_ch(thr=1700, arm=RC_HIGH, ele=1150, angle=RC_HIGH, floor=1900), print_every=0.7)
+    loop(4, "climb2", rc_ch(thr=1900, arm=RC_HIGH, ele=1800, angle=RC_HIGH, floor=1900), print_every=1)
+    loop(6, "dive-nofloor", rc_ch(thr=1700, arm=RC_HIGH, ele=1150, angle=RC_HIGH), print_every=0.7)
 elif MAN in ("hang", "hang_tvc"):
     loop(6, MAN, rc_ch(thr=thrM, arm=RC_HIGH, angle=RC_LOW, **MAN_RC), print_every=0.7)
     plant.set_wind(down_ms=3.0)
@@ -373,34 +392,30 @@ elif MAN in ("flat_spin", "inv_spin", "knife_spin"):
     loop(5, "rud-release", rc_ch(thr=1650, arm=RC_HIGH, **MAN_RC), print_every=0.7)
     loop(5, "exit", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
 elif MAN == "floor_spin":
-    # FLAT SPIN into the floor. FSPIN and FLOOR share the invert channel
-    # (bands 1150-1450 / 1700-2100), so for this maneuver the FLOOR mode
-    # range is MOVED onto the FSPIN band via MSP: invert=1300 then
-    # activates both, the floor re-arms instantly (still above floor +
-    # margin) and the recovery must catch the autorotation. The range is
-    # restored before the script ends - the disarm save would otherwise
-    # persist the remap into the eeprom.
-    from bench import PERM_ALTFLOOR, CH_INVERTED
-    loop(3, "arm-floor", rc_ch(thr=1700, arm=RC_HIGH, angle=RC_HIGH, invert=1900), print_every=1)
-    loop(14, "climb", rc_ch(thr=1900, arm=RC_HIGH, ele=1800, angle=RC_HIGH, invert=1900), print_every=1)
-    m.set_mode_range(6, PERM_ALTFLOOR, CH_INVERTED - 4, 1150, 1450)
-    loop(4, "spin-hold", rc_ch(thr=1650, arm=RC_HIGH, invert=1300), print_every=0.7)
-    loop(14, "flat-spin", rc_ch(thr=1000, arm=RC_HIGH, rud=2000, invert=1300), print_every=0.7)
-    loop(10, "caught", rc_ch(thr=1050, arm=RC_HIGH, invert=1300), print_every=0.7)
-    m.set_mode_range(6, PERM_ALTFLOOR, CH_INVERTED - 4, 1700, 2100)
-    loop(5, "exit", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH, invert=1900), print_every=0.7)
+    # FLAT SPIN into the floor. FLOOR lives on its OWN switch (floor=1900 on
+    # CH_INVERTED) and is armed once during the climb, then LEFT ON the whole
+    # time - it never moves. The flight-mode selector flips ANGLE -> FSPIN for
+    # the spin (angle 1375) and back to ANGLE on exit. No mode range is ever
+    # remapped in flight; the floor must catch the autorotation on its own,
+    # with the pilot at idle throttle and no elevator.
+    loop(5, "climb", rc_ch(thr=1900, arm=RC_HIGH, ele=1800, angle=RC_HIGH), print_every=1)
+    loop(4, "arm-floor", rc_ch(thr=1900, arm=RC_HIGH, ele=1800, angle=RC_HIGH, floor=1900), print_every=1)
+    loop(3, "spin-hold", rc_ch(thr=1650, arm=RC_HIGH, angle=1375, floor=1900), print_every=0.7)
+    loop(8, "flat-spin", rc_ch(thr=1000, arm=RC_HIGH, rud=2000, angle=1375, floor=1900), print_every=0.7)
+    loop(12, "caught", rc_ch(thr=1050, arm=RC_HIGH, angle=1375, floor=1900), print_every=0.7)
+    loop(5, "exit", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH, floor=1900), print_every=0.7)
 elif MAN == "floor_panic":
     # dive with the throttle CHOPPED (the panic case): the recovery climb
     # must get its own energy (cruise + pitch-to-throttle floor), the motor
     # must keep RUNNING through the low stick, and the held down-elevator
     # must not drag the recovery target down (stick rates suppressed)
-    loop(3, "arm-floor", rc_ch(thr=1700, arm=RC_HIGH, **MAN_RC), print_every=1)
-    loop(14, "climb", rc_ch(thr=1900, arm=RC_HIGH, ele=1800, **MAN_RC), print_every=1)
-    loop(26, "dive-chop", rc_ch(thr=1050, arm=RC_HIGH, ele=1150, **MAN_RC), print_every=0.7)
-    loop(8, "after", rc_ch(thr=1050, arm=RC_HIGH, **MAN_RC), print_every=0.7)
+    loop(8, "climb", rc_ch(thr=1900, arm=RC_HIGH, ele=1800, angle=RC_HIGH), print_every=1)
+    loop(2, "arm-floor", rc_ch(thr=1700, arm=RC_HIGH, angle=RC_HIGH, floor=1900), print_every=1)
+    loop(20, "dive-chop", rc_ch(thr=1050, arm=RC_HIGH, ele=1150, angle=RC_HIGH, floor=1900), print_every=0.7)
+    loop(8, "after", rc_ch(thr=1050, arm=RC_HIGH, angle=RC_HIGH, floor=1900), print_every=0.7)
     # pilot takeover: after the catch (sticks were centered in "after") a
     # fresh deflection must end the recovery immediately - ANGLE is back
-    loop(6, "takeover", rc_ch(thr=1650, arm=RC_HIGH, ele=1400, **MAN_RC), print_every=0.7)
+    loop(6, "takeover", rc_ch(thr=1650, arm=RC_HIGH, ele=1400, angle=RC_HIGH, floor=1900), print_every=0.7)
 elif MAN == "crash_test":
     # crash detection POSITIVE path: impact spike, then the airframe lies
     # still (frozen plant = frozen baro, 1 g, zero rates, GPS speed 0) ->
@@ -408,8 +423,8 @@ elif MAN == "crash_test":
     GPS_STILL = dict(lat_e7=473970000, lon_e7=85400000, alt_cm=12000,
                      speed_cms=0, course_dd=0, vel_ned_cms=(0, 0, 0))
     loop(5, "cruise", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH), print_every=1, gps=GPS_STILL)
-    for _ in range(300):   # 0.3 s impact spike > 8 g
-        sim_step(m, (0.0, 0.0, 12000.0), plant.gyro_dps16(),
+    for _ in range(3):     # realistic impact: a 3 ms spike pegged at full-scale
+        sim_step(m, (0.0, 0.0, 16000.0), plant.gyro_dps16(),   # then NOTHING (still)
                  rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH), baro_pa=plant.baro_pa(), gps=GPS_STILL)
         _frames[0] += 1
     loop(4, "still", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH), print_every=0.5, freeze=True, gps=GPS_STILL)
@@ -422,8 +437,8 @@ elif MAN == "snap_neg":
     GPS_MOVE = dict(lat_e7=473970000, lon_e7=85400000, alt_cm=12000,
                     speed_cms=1800, course_dd=0, vel_ned_cms=(1800, 0, 0))
     loop(5, "cruise", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH), print_every=1, gps=GPS_MOVE)
-    for _ in range(300):
-        sim_step(m, (0.0, 0.0, 12000.0), plant.gyro_dps16(),
+    for _ in range(3):     # same 3 ms full-scale spike, but the aircraft keeps
+        sim_step(m, (0.0, 0.0, 16000.0), plant.gyro_dps16(),   # moving -> must NOT cut
                  rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH), baro_pa=plant.baro_pa(), gps=GPS_MOVE)
         _frames[0] += 1
     loop(5, "flyon", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH, ail=1800), print_every=0.5, gps=GPS_MOVE)
@@ -449,7 +464,7 @@ elif MAN == "seq_chain":
         for _i in range(len(_c), _MAXSEG):
             m.set_figure_segment(_i, _END)
         _leg = _path.rsplit("/", 1)[-1].removesuffix(".json")
-        loop(_secs, f"seq {_leg}", rc_ch(thr=1800, arm=RC_HIGH, angle=1575), print_every=0.7)
+        loop(_secs, f"seq {_leg}", rc_ch(thr=1800, arm=RC_HIGH, angle=1525), print_every=0.7)
         loop(4, "between", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH), print_every=1)
     loop(3, "exit", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
 elif MAN == "inverted_stick":
@@ -474,12 +489,15 @@ elif MAN == "inverted":
 else:
     # hold with a disturbance: 4 s downdraft gust mid-hold -- the honest
     # proof of regulation is the visible actuator response and the altitude
-    # error returning to zero afterwards
-    loop(8, MAN, rc_ch(thr=thrM, arm=RC_HIGH, angle=RC_LOW, **MAN_RC), print_every=0.7)
+    # error returning to zero afterwards. MAN_RC merges OVER the defaults so a
+    # maneuver that drives the mode selector (roll_hold -> FIGROLL on angle)
+    # overrides the ANGLE-off default instead of colliding with it.
+    _hold_kw = {**dict(thr=thrM, arm=RC_HIGH, angle=RC_LOW), **MAN_RC}
+    loop(8, MAN, rc_ch(**_hold_kw), print_every=0.7)
     plant.set_wind(down_ms=3.0)
-    loop(4, "gust", rc_ch(thr=thrM, arm=RC_HIGH, angle=RC_LOW, **MAN_RC), print_every=0.7)
+    loop(4, "gust", rc_ch(**_hold_kw), print_every=0.7)
     plant.set_wind()
-    loop(12, MAN, rc_ch(thr=thrM, arm=RC_HIGH, angle=RC_LOW, **MAN_RC), print_every=0.7)
+    loop(12, MAN, rc_ch(**_hold_kw), print_every=0.7)
 
 fr, fp, fy = fc_att(m); jr, jp, jy = plant.rpy()
 # per-maneuver end state: only the sustained holds END in the held attitude;

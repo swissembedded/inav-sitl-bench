@@ -85,9 +85,12 @@ def main():
     m_fly = motors(msp)
     print(f"flying:            motors={m_fly}")
 
-    # impact: 12 g spike, then stillness (level 1 g, zero rates, frozen baro)
-    for _ in range(30):
-        sim_step(msp, (0, 0, 12000), (0, 0, 0), rc, baro_pa=plane.baro_pa())
+    # impact: a short spike pegged at the accel full-scale (16 g), then
+    # stillness (level 1 g, zero rates, frozen baro). The impact threshold
+    # is derived in the firmware (15% below full-scale), so only a
+    # near-saturating hit counts as a crash.
+    for _ in range(3):
+        sim_step(msp, (0, 0, 16000), (0, 0, 0), rc, baro_pa=plane.baro_pa())
     cut_frame = None
     for k in range(STILL_FRAMES):
         sim_step(msp, (0, 0, 1000), (0, 0, 0), rc, baro_pa=plane.baro_pa())
