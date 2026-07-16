@@ -24,10 +24,13 @@ MANEUVERS = ["inverted", "inverted_stick", "knife_left", "knife_right",
              "knife_spin", "snap_neg", "floor_dive", "floor_panic",
              "floor_spin"]
 MODELS = {
-    # model: maneuver-throttle override [us] (None = aerobat3d default)
+    # model: maneuver-throttle override [us] (None = aerobat3d default);
+    # the box batch ignores this and sweeps --thr-scale instead
     "turbotimber": 1300,
     "kingfisher": None,
     "dragonfly": 1750,
+    "easyglider": None, "easystar": None, "xeno": None,
+    "aeroscout": None, "a10": None, "icona5": None,
 }
 TITLE = {
     "inverted": "inverted hold through a gust and a rudder turn",
