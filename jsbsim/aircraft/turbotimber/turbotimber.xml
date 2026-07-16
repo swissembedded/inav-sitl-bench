@@ -180,7 +180,7 @@
       <function name="aero/force/Lift_elevator">
         <product>
           <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
-          <property>fcs/elevator-pos-norm</property> <value> 0.30 </value>
+          <property>fcs/elevator-pos-norm</property> <value> 0.15 </value>
         </product>
       </function>
     </axis>
@@ -245,7 +245,7 @@
         <product>
           <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
           <property>metrics/bw-ft</property> <property>fcs/aileron-pos-norm</property>
-          <value> 0.22 </value>
+          <value> 0.12 </value>
         </product>
       </function>
       <function name="aero/moment/Roll_aileron_propwash">
@@ -304,14 +304,14 @@
         <product>
           <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
           <property>metrics/cbarw-ft</property> <property>fcs/elevator-pos-norm</property>
-          <value> -0.95 </value>
+          <value> -0.45 </value>
         </product>
       </function>
       <function name="aero/moment/Pitch_elevator_propwash">
         <product>
           <property>fcs/throttle-cmd-norm</property>
           <property>fcs/elevator-pos-norm</property>
-          <value> -9.0 </value>
+          <value> -5.0 </value>
         </product>
       </function>
     </axis>

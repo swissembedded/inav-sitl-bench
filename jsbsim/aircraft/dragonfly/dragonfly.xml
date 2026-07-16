@@ -158,7 +158,7 @@
       <function name="aero/force/Lift_elevator">
         <product>
           <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
-          <property>fcs/elevator-pos-norm</property> <value> 0.25 </value>
+          <property>fcs/elevator-pos-norm</property> <value> 0.12 </value>
         </product>
       </function>
     </axis>
@@ -221,7 +221,7 @@
         <product>
           <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
           <property>metrics/bw-ft</property> <property>fcs/aileron-pos-norm</property>
-          <value> 0.25 </value>
+          <value> 0.18 </value>
         </product>
       </function>
       <!-- no propwash aileron term: the wing is entirely out of the
@@ -260,7 +260,7 @@
         <product>
           <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
           <property>metrics/cbarw-ft</property> <property>fcs/elevator-pos-norm</property>
-          <value> -0.80 </value>
+          <value> -0.50 </value>
         </product>
       </function>
       <function name="aero/moment/Pitch_elevator_propwash">
