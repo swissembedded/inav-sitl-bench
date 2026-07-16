@@ -137,11 +137,14 @@ class JSBSimPlant:
         return ((f["position/lat-gc-deg"] - la0) * 111320.0,
                 (f["position/long-gc-deg"] - lo0) * 111320.0 * _m.cos(_m.radians(la0)))
 
-    # The nozzle actuator is a servo too: +-15 deg full deflection driven by
-    # the same 0.06 s/60 deg class as the surfaces -> 15 deg (1.0 norm) in
-    # 0.015 s, full sweep -1..+1 in 0.03 s. Fast, but not instant - and the
-    # TVC hover stands on exactly this actuator.
-    SERVO_SLEW_TVC = 1.0 / 0.015  # normalized units per second
+    # The nozzle actuator is the SAME servo class as the surfaces, geared
+    # down: the full servo travel maps to the +-15 deg nozzle range, so in
+    # PWM/normalized terms the nozzle slews exactly like a surface - full
+    # sweep -1..+1 in ~0.12 s (0.06 s/60 deg class through the linkage).
+    # An earlier model assumed the arm uses only a quarter of its travel
+    # (full sweep 0.03 s) - 4x too fast; the gearing does not make the
+    # servo quicker, it trades nozzle angle for torque and resolution.
+    SERVO_SLEW_TVC = 1.0 / 0.06   # normalized units per second
 
     def set_tvc(self, pitch_norm=0.0, yaw_norm=0.0):
         """Vectored-nozzle deflection targets, -1..1 (funjet); slewed in
