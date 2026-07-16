@@ -261,16 +261,43 @@ for xx, key in enumerate(SW_COLS):
                   va="center", color="0.35")
 levers, = axSw.plot([0, 1, 2], [-1, -1, -1], "s", ms=8, color="#d62728")
 
-# 4) controller OUT: FC commands (instant bars)
+# 4) controller OUT: FC commands (instant bars). ACTUATOR-TRUE: the bars
+# show exactly the surfaces the airframe HAS (PANEL_BARS per actuator set
+# in airframe_config, model name from the params file); the elevon bars
+# are the FC's own roll+pitch mix (the rate-50 smix rules). Logs without
+# a model line keep the legacy fixed panel.
+MODEL = None
+if os.path.exists(f"jsbsim_params_{MAN}.txt"):
+    for _ln in open(f"jsbsim_params_{MAN}.txt"):
+        if _ln.startswith("model="):
+            MODEL = _ln.strip().split("=", 1)[1]
+_out_labels = None
+if MODEL:
+    try:
+        from airframe_config import AIRFRAMES as _AF, PANEL_BARS as _PB
+        _out_labels = list(_PB[_AF[MODEL][0]])
+    except Exception:
+        _out_labels = None
+if _out_labels is None:
+    _out_labels = ["throttle", "rudder", "elevator", "aileron"]
+    if HAS_TVC:
+        _out_labels += ["tvc yaw", "tvc pitch"]
+    if HAS_FLAP:
+        _out_labels += ["flaps"]
+_OUT_SRC = {
+    "throttle": fc_thr, "rudder": cs_rud, "elevator": cs_ele,
+    "aileron": cs_ail, "flaps": flap, "tvc yaw": tvc_y, "tvc pitch": tvc_p,
+    "elevon L": [0.5 * a + 0.5 * e for a, e in zip(cs_ail, cs_ele)],
+    "elevon R": [-0.5 * a + 0.5 * e for a, e in zip(cs_ail, cs_ele)],
+    "rotor tilt": cs_ail, "pre-rotator": [0.0] * len(rows),
+}
+_OUT_COL = {"throttle": "#ff7f0e", "rudder": "#2ca02c", "elevator": "#1f77b4",
+            "aileron": "#d62728", "flaps": "#7f7f7f", "tvc yaw": "#8c564b",
+            "tvc pitch": "#9467bd", "elevon L": "#d62728", "elevon R": "#1f77b4",
+            "rotor tilt": "#d62728", "pre-rotator": "#7f7f7f"}
+_out_series = [_OUT_SRC[b] for b in _out_labels]
+_out_colors = [_OUT_COL.get(b, "0.4") for b in _out_labels]
 axS = panel(PY[3], "controller OUT: FC commands")
-_out_labels = ["throttle", "rudder", "elevator", "aileron"]
-_out_colors = ["#ff7f0e", "#2ca02c", "#1f77b4", "#d62728"]
-if HAS_TVC:
-    _out_labels += ["tvc yaw", "tvc pitch"]
-    _out_colors += ["#8c564b", "#9467bd"]
-if HAS_FLAP:
-    _out_labels += ["flaps"]
-    _out_colors += ["#7f7f7f"]
 _n_out = len(_out_labels)
 axS.set_xlim(-1.1, 1.1); axS.set_ylim(-0.6, _n_out - 0.4)
 axS.set_yticks([])
@@ -324,13 +351,8 @@ def frame(i):
     mtxt.set_text(mode[i])
     dotL.set_data([-1.4 + st_rud[i]], [st_thr[i] * 2 - 1])
     dotR.set_data([1.4 + st_ail[i]], [-st_ele[i]])
-    _vals = [fc_thr[i], cs_rud[i], cs_ele[i], cs_ail[i]]
-    if HAS_TVC:
-        _vals += [tvc_y[i], tvc_p[i]]
-    if HAS_FLAP:
-        _vals += [flap[i]]
-    for b, val in zip(bars, _vals):
-        b.set_width(val)
+    for b, series in zip(bars, _out_series):
+        b.set_width(series[i])
     levers.set_data([0, 1, 2],
                     [sw_y(k, sw_detent(k, sw[k][i])) for k in SW_COLS])
     return seg_lines + [trail, txt, mtxt, marker, markerP, markerO, dotL, dotR, levers] + list(bars)

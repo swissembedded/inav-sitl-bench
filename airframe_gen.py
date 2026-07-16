@@ -75,7 +75,7 @@ AIRFRAMES = {
         cd0=0.040, k_ind=0.070,
         cm0=0.010, cm_a=-0.50, cm_ele=-0.60, roll_ail=0.16,
         yaw_rud=0.10, pw_ele=0.0, pw_rud=0.0, pw_ail=0.0,
-        dihedral=-0.02, iyy_scale=1.2),
+        dihedral=-0.02, iyy_scale=1.2, flap_cl=0.40),
     # ParkZone Icon A5: 1.33 m amphibian, ~1.23 kg, 480/960Kv 9x8 pusher
     # on the pylon - thrust well above the CG (nose-down couple), hull
     # side area, the dragonfly's grown-up sibling.
@@ -101,7 +101,8 @@ AIRFRAMES = {
         yaw_rud=0.12, pw_ele=-5.0, pw_rud=4.0, pw_ail=1.5,
         dihedral=-0.05, iyy_scale=1.0),
     # Freewing Lippisch P.15 Diana 64mm EDF: 750 mm tailless delta with a
-    # fin - EDF (no wash), light, T/W ~1.4: the hot little delta.
+    # FIXED fin - EDF (no wash), light, T/W ~1.4. ELEVONS ONLY (Daniel):
+    # no rudder servo, yaw_rud zero like the xeno.
     "lippisch": dict(
         desc="Freewing Lippisch P.15 Diana 64mm EDF, 750 mm tailless delta",
         span=0.75, area=0.13, m_empty=0.26, m_batt=0.16,
@@ -109,10 +110,11 @@ AIRFRAMES = {
         cl0=0.10, clmax=1.00, a_max_deg=16, clmin=-0.70,
         cd0=0.032, k_ind=0.090,
         cm0=0.005, cm_a=-0.30, cm_ele=-0.35, roll_ail=0.18,
-        yaw_rud=0.08, pw_ele=0.0, pw_rud=0.0, pw_ail=0.0,
+        yaw_rud=0.0, pw_ele=0.0, pw_rud=0.0, pw_ail=0.0,
         dihedral=-0.03, iyy_scale=0.7),
     # Freewing MiG-15 64mm EDF: 700 mm swept-wing jet, 470 g - EDF, no
-    # wash, has a proper rudder, warbird-jet loading (~47 g/dm2).
+    # wash, warbird-jet loading (~47 g/dm2). The RC model has aileron and
+    # elevator ONLY (Daniel) - the fin is fixed, no rudder servo.
     "mig15": dict(
         desc="Freewing MiG-15 64mm EDF, 700 mm swept jet",
         span=0.70, area=0.10, m_empty=0.34, m_batt=0.13,
@@ -120,7 +122,7 @@ AIRFRAMES = {
         cl0=0.12, clmax=1.05, a_max_deg=14, clmin=-0.75,
         cd0=0.035, k_ind=0.080,
         cm0=0.008, cm_a=-0.45, cm_ele=-0.50, roll_ail=0.15,
-        yaw_rud=0.10, pw_ele=0.0, pw_rud=0.0, pw_ail=0.0,
+        yaw_rud=0.0, pw_ele=0.0, pw_rud=0.0, pw_ail=0.0,
         dihedral=-0.02, iyy_scale=1.0),
     # Dynam PT-17 Stearman 1300 mm: BIPLANE - two wings worth of area and
     # drag on 2.15 kg (4S), gentle and slow, big prop torque.
@@ -144,7 +146,7 @@ AIRFRAMES = {
         cd0=0.045, k_ind=0.062,
         cm0=0.025, cm_a=-0.55, cm_ele=-0.50, roll_ail=0.13,
         yaw_rud=0.12, pw_ele=0.0, pw_rud=0.0, pw_ail=0.0,
-        dihedral=-0.06, iyy_scale=1.0),
+        dihedral=-0.06, iyy_scale=1.0, flap_cl=0.45),
     # Sonicmodell AR Wing Pro: 1000 mm EPP FPV flying wing - elevons
     # only, no rudder (like the xeno, faster and heavier).
     "arwing": dict(
@@ -168,8 +170,9 @@ AIRFRAMES = {
         yaw_rud=0.05, pw_ele=0.0, pw_rud=0.0, pw_ail=0.0,
         dihedral=-0.03, iyy_scale=0.7),
     # Durafly D.H.100 Vampire V3 (RCAF Silver): 1100 mm twin-boom jet,
-    # 1050 g, 70 mm 5-blade EDF - no wash, proper twin-fin rudders,
-    # broad straight wing (~46 g/dm2).
+    # 1050 g, 70 mm 5-blade EDF - no wash, broad straight wing
+    # (~46 g/dm2). Aileron + elevator ONLY (Daniel): the twin fins are
+    # fixed, no rudder servo.
     "vampire": dict(
         desc="Durafly DH.100 Vampire V3, 1.1 m twin-boom 70mm EDF",
         span=1.10, area=0.23, m_empty=0.83, m_batt=0.22,
@@ -177,7 +180,7 @@ AIRFRAMES = {
         cl0=0.18, clmax=1.10, a_max_deg=14, clmin=-0.70,
         cd0=0.036, k_ind=0.070,
         cm0=0.012, cm_a=-0.48, cm_ele=-0.55, roll_ail=0.15,
-        yaw_rud=0.12, pw_ele=0.0, pw_rud=0.0, pw_ail=0.0,
+        yaw_rud=0.0, pw_ele=0.0, pw_rud=0.0, pw_ail=0.0,
         dihedral=-0.04, iyy_scale=1.0),
 }
 
@@ -269,6 +272,7 @@ TPL = """<?xml version="1.0"?>
   </external_reactions>
   <flight_control name="FCS">
     <property value="0.0"> fcs/throttle-cmd-norm </property>
+    <property value="0.0"> fcs/flap-cmd-norm </property>
     <channel name="Roll">
       <aerosurface_scale name="aileron">
         <input>fcs/aileron-cmd-norm</input>
@@ -320,7 +324,7 @@ TPL = """<?xml version="1.0"?>
           <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
           <property>fcs/elevator-pos-norm</property> <value> 0.12 </value>
         </product>
-      </function>
+      </function>{flap_lift}
     </axis>
     <axis name="DRAG">
       <function name="aero/force/Drag_basic">
@@ -334,7 +338,7 @@ TPL = """<?xml version="1.0"?>
           <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
           <property>aero/cl-squared</property> <value> {k_ind} </value>
         </product>
-      </function>
+      </function>{flap_drag}
       <function name="aero/force/Drag_alpha_poststall">
         <product>
           <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
@@ -422,7 +426,7 @@ TPL = """<?xml version="1.0"?>
           <property>fcs/elevator-pos-norm</property>
           <value> {pw_ele} </value>
         </product>
-      </function>
+      </function>{flap_pitch}
     </axis>
     <axis name="YAW">
       <function name="aero/moment/Yaw_beta">
@@ -459,6 +463,30 @@ TPL = """<?xml version="1.0"?>
 """
 
 
+FLAP_LIFT = """
+      <function name="aero/force/Lift_flap">
+        <product>
+          <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
+          <property>fcs/flap-cmd-norm</property> <value> {flap_cl} </value>
+        </product>
+      </function>"""
+FLAP_DRAG = """
+      <function name="aero/force/Drag_flap">
+        <product>
+          <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
+          <property>fcs/flap-cmd-norm</property> <value> {flap_cd:.3f} </value>
+        </product>
+      </function>"""
+FLAP_PITCH = """
+      <function name="aero/moment/Pitch_flap">
+        <product>
+          <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
+          <property>metrics/cbarw-ft</property>
+          <property>fcs/flap-cmd-norm</property> <value> {flap_cm:.3f} </value>
+        </product>
+      </function>"""
+
+
 def gen(name, p):
     span, area = p["span"], p["area"]
     chord = area / span
@@ -483,7 +511,15 @@ def gen(name, p):
         clmin_brk=0.75 * p["clmin"],
         cd0=p["cd0"], k_ind=p["k_ind"], cm0=p["cm0"], cm_a=p["cm_a"],
         cm_ele=p["cm_ele"], roll_ail=p["roll_ail"], yaw_rud=p["yaw_rud"],
-        pw_ele=p["pw_ele"], pw_rud=p["pw_rud"], dihedral=p["dihedral"])
+        pw_ele=p["pw_ele"], pw_rud=p["pw_rud"], dihedral=p["dihedral"],
+        flap_lift="", flap_drag="", flap_pitch="")
+    # plain (unblown) landing flaps where the airframe has them: lift and
+    # drag increments plus the nose-down trim change, all proportional to
+    # fcs/flap-cmd-norm (the plant slews that property like a flap servo)
+    if p.get("flap_cl", 0):
+        vals["flap_lift"] = FLAP_LIFT.format(flap_cl=p["flap_cl"])
+        vals["flap_drag"] = FLAP_DRAG.format(flap_cd=0.14 * p["flap_cl"])
+        vals["flap_pitch"] = FLAP_PITCH.format(flap_cm=-0.20 * p["flap_cl"])
     d = os.path.join(HERE, "jsbsim", "aircraft", name)
     os.makedirs(d, exist_ok=True)
     with open(os.path.join(d, f"{name}.xml"), "w", newline="\n") as fh:

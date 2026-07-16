@@ -48,6 +48,12 @@ AIRFRAMES = {
     # hold right tilt + up elevator, pre-rotator to full rpm first, one-way
     # bearing spins the rotor up further with airspeed); flow rule: rotor
     # lift ~ rpm^2, rpm lives on inflow - climbing bleeds it.
+    # PLUS the tip-over pair (floor_dive pattern, separate videos):
+    # tip_manual = slow flight without controller, rotor decays, tilt goes
+    # soft, gyro rolls away; tip_recovery = same entry with the controller
+    # holding attitude and the thrust governor restoring inflow -> rpm ->
+    # authority. If the existing controller cannot catch it, that is the
+    # measured case for the tip-monitor FW follow-up.
     "autog2":    ("GYRO",       ["ground_takeoff", "turns", "steep_descent",
                                  "half_loop_90"]),
 }

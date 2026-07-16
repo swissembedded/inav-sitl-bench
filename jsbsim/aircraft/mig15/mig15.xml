@@ -86,6 +86,7 @@
   </external_reactions>
   <flight_control name="FCS">
     <property value="0.0"> fcs/throttle-cmd-norm </property>
+    <property value="0.0"> fcs/flap-cmd-norm </property>
     <channel name="Roll">
       <aerosurface_scale name="aileron">
         <input>fcs/aileron-cmd-norm</input>
@@ -260,7 +261,7 @@
         <product>
           <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
           <property>metrics/bw-ft</property> <property>fcs/rudder-pos-norm</property>
-          <value> 0.1 </value>
+          <value> 0.0 </value>
         </product>
       </function>
       <function name="aero/moment/Yaw_rudder_propwash">

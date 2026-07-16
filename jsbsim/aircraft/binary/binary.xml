@@ -86,6 +86,7 @@
   </external_reactions>
   <flight_control name="FCS">
     <property value="0.0"> fcs/throttle-cmd-norm </property>
+    <property value="0.0"> fcs/flap-cmd-norm </property>
     <channel name="Roll">
       <aerosurface_scale name="aileron">
         <input>fcs/aileron-cmd-norm</input>
@@ -138,6 +139,12 @@
           <property>fcs/elevator-pos-norm</property> <value> 0.12 </value>
         </product>
       </function>
+      <function name="aero/force/Lift_flap">
+        <product>
+          <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
+          <property>fcs/flap-cmd-norm</property> <value> 0.45 </value>
+        </product>
+      </function>
     </axis>
     <axis name="DRAG">
       <function name="aero/force/Drag_basic">
@@ -150,6 +157,12 @@
         <product>
           <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
           <property>aero/cl-squared</property> <value> 0.062 </value>
+        </product>
+      </function>
+      <function name="aero/force/Drag_flap">
+        <product>
+          <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
+          <property>fcs/flap-cmd-norm</property> <value> 0.063 </value>
         </product>
       </function>
       <function name="aero/force/Drag_alpha_poststall">
@@ -238,6 +251,13 @@
           <property>fcs/throttle-cmd-norm</property>
           <property>fcs/elevator-pos-norm</property>
           <value> 0.0 </value>
+        </product>
+      </function>
+      <function name="aero/moment/Pitch_flap">
+        <product>
+          <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
+          <property>metrics/cbarw-ft</property>
+          <property>fcs/flap-cmd-norm</property> <value> -0.090 </value>
         </product>
       </function>
     </axis>

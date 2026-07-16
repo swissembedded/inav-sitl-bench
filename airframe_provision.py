@@ -1,71 +1,100 @@
 # Copyright (C) 2026 Daniel Haensse
 # GPL-3.0-or-later (see repo LICENSE)
-"""Per-airframe FC provisioning + check flight ("Einflug"), driven by
-airframe_config.py. Produces eeprom_<model>.bin for the batch: mixer
-matches the REAL actuator set (elevon mix where the airframe has
-elevons), then a scripted check flight settles the learners before any
-figure is flown. Only a PASSed check flight releases the airframe.
+"""Per-airframe FC provisioning, driven by airframe_config.py: the bench
+core provisioning plus the servo mixer that matches the REAL actuator
+set, saved to the FC and copied out as eeprom_<model>.bin. The check
+flight ("Einflug") itself lives in the flight: jsbsim_fly.py's `show`
+sequence opens with a trim phase that finds the model's level throttle
+by feedback and records it in airframe_trim.json.
 
-    python airframe_provision.py <model>     # provision + check flight
-    python airframe_provision.py --all
-
-Status: SKELETON - provision per actuator set implemented, check flight
-TODO (rate-loop check, gain-learner settle, trim verify).
+    python airframe_provision.py <model>      (SITL must be running)
 """
-import struct
+import os
+import shutil
 import sys
+import time
 
 from airframe_config import AIRFRAMES
 from msp import MspClient
+import bench
 
-# INAV smix input sources
+# INAV smix input sources (src/main/flight/servos.h)
 IN_ROLL, IN_PITCH, IN_YAW = 0, 1, 2
+IN_FLAPS = 14                 # INPUT_FEATURE_FLAPS (FLAPERON mode drives it)
+IN_TVC_PITCH, IN_TVC_YAW = 62, 63
 
 
 def provision_mixer(msp, actuators):
+    """Servo mixer for the REAL actuator set. Returns the rule count; the
+    caller terminates the list (the FC stops loading at the first rate-0
+    rule, so stale tail rules from the core provisioning disappear)."""
     if actuators.startswith("ELEVON"):
-        # elevon mix: both servos carry roll AND pitch (FC-side mixing,
-        # the honest config for xeno/arwing/deltastrike/lippisch/funjet)
+        # elevon mix: both surfaces carry roll AND pitch (FC-side mixing,
+        # the honest config for xeno/lippisch/arwing/deltastrike/funjet)
         msp.set_servo_mixer_rule(0, 0, IN_ROLL, rate=50)
         msp.set_servo_mixer_rule(1, 0, IN_PITCH, rate=50)
         msp.set_servo_mixer_rule(2, 1, IN_ROLL, rate=-50)
         msp.set_servo_mixer_rule(3, 1, IN_PITCH, rate=50)
         if actuators == "ELEVON_R":
             msp.set_servo_mixer_rule(4, 2, IN_YAW)
+            return 5
         if actuators == "ELEVON_TVC":
-            msp.set_servo_mixer_rule(4, 2, 62)   # TVC pitch
-            msp.set_servo_mixer_rule(5, 3, 63)   # TVC yaw
-    elif actuators == "QH":
-        # no rudder on the airframe: no yaw rule at all - knife boxes
-        # vanish via servoMixerHasYawControl(), exactly the FW gating
+            msp.set_servo_mixer_rule(4, 2, IN_TVC_PITCH)
+            msp.set_servo_mixer_rule(5, 3, IN_TVC_YAW)
+            return 6
+        return 4
+    if actuators == "QH":
+        # no rudder on the airframe: NO yaw rule at all - the knife-edge
+        # boxes vanish via servoMixerHasYawControl(), the FW's own
+        # capability gating
         msp.set_servo_mixer_rule(0, 0, IN_ROLL)
         msp.set_servo_mixer_rule(1, 1, IN_PITCH)
-    elif actuators == "GYRO":
-        # rotor tilt is lateral only -> roll; pitch = tail elevator
-        msp.set_servo_mixer_rule(0, 0, IN_ROLL)    # rotor tilt
-        msp.set_servo_mixer_rule(1, 1, IN_PITCH)   # elevator
-        msp.set_servo_mixer_rule(2, 2, IN_YAW)     # rudder
-    else:   # QHS / QHS_FLAPS
-        msp.set_servo_mixer_rule(0, 0, IN_ROLL)
-        msp.set_servo_mixer_rule(1, 1, IN_PITCH)
-        msp.set_servo_mixer_rule(2, 2, IN_YAW)
-        if actuators == "QHS_FLAPS":
-            # INPUT_FEATURE_FLAPS with the decided 2 s deployment
-            msp.set_servo_mixer_rule(3, 3, 14, rate=100, speed=50)
+        return 2
+    if actuators == "GYRO":
+        # rotor tilt is LATERAL only -> it is the roll surface; pitch is
+        # the tail elevator, yaw the rudder (Daniel: configured as a
+        # normal airplane, aileron = rotor tilt)
+        msp.set_servo_mixer_rule(0, 0, IN_ROLL)     # rotor tilt
+        msp.set_servo_mixer_rule(1, 1, IN_PITCH)    # elevator
+        msp.set_servo_mixer_rule(2, 2, IN_YAW)      # rudder
+        return 3
+    # QHS / QHS_FLAPS
+    msp.set_servo_mixer_rule(0, 0, IN_ROLL)
+    msp.set_servo_mixer_rule(1, 1, IN_PITCH)
+    msp.set_servo_mixer_rule(2, 2, IN_YAW)
+    if actuators == "QHS_FLAPS":
+        # flap servo with the decided slow deployment (speed 50 = 2 s full
+        # travel, the aerodynamically gentle rate). Driven by the FLAPERON
+        # box on a real build; the bench show-flight commands the plant
+        # flaps directly (a pilot channel, not a stabilized output).
+        msp.set_servo_mixer_rule(3, 3, IN_FLAPS, rate=100, speed=50)
+        return 4
+    return 3
+
+
+def provision_model(model):
+    actuators, repertoire = AIRFRAMES[model]
+    print(f"=== {model}: {actuators} -> {', '.join(repertoire)}")
+    bench.provision()             # core settings + save (SITL reboots)
+    time.sleep(3)
+    msp = MspClient()
+    n = provision_mixer(msp, actuators)
+    msp.set_servo_mixer_rule(n, 0, 0, rate=0)   # terminate the rule list
+    msp.save_eeprom()
+    msp.close()
+    time.sleep(3)
+    if os.path.exists("fcdata/eeprom.bin"):
+        shutil.copy("fcdata/eeprom.bin", f"eeprom_{model}.bin")
+        print(f"-> eeprom_{model}.bin")
 
 
 def main():
-    which = ([a for a in sys.argv[1:] if a in AIRFRAMES]
-             or (list(AIRFRAMES) if "--all" in sys.argv else []))
+    which = [a for a in sys.argv[1:] if a in AIRFRAMES]
     if not which:
         print(__doc__)
-        return
+        raise SystemExit(f"models: {', '.join(AIRFRAMES)}")
     for model in which:
-        actuators, repertoire = AIRFRAMES[model]
-        print(f"=== {model}: {actuators} -> {repertoire}")
-        # TODO: base provisioning (bench.provision core) + provision_mixer
-        # + per-type rates/PID scaling + check flight + eeprom_<model>.bin
-        raise SystemExit("check flight not implemented yet - next step")
+        provision_model(model)
 
 
 if __name__ == "__main__":

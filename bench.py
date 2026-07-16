@@ -89,6 +89,12 @@ def provision():
     # skip boot gyro + gravity calibration (no real sensors behind the HITL
     # injection on SITL, the calibration FSMs would never complete)
     msp.set_setting("init_gyro_cal", struct.pack("<B", 0))
+    # acc "calibrated" is DERIVED from accZero/accGain at every config
+    # activation: the all-zero/4096 sentinel means UNCALIBRATED and re-raises
+    # arming block bit13 whenever activateConfig runs after the HITL enable
+    # (boot race, seen on 2 of 4 boots). A 1-LSB accZero.z (~0.2% g on the
+    # injected acc) marks it calibrated deterministically on every boot.
+    msp.set_setting("acczero_z", struct.pack("<h", 1))
     msp.set_setting("pitot_hardware", struct.pack("<B", 0))   # NONE
     msp.enable_feature(1 << 7)                                # FEATURE_GPS (HITL injection)
     # provider MSP is driver-based: gpsInit() keeps the feature alive without

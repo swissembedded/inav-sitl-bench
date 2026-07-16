@@ -129,6 +129,7 @@ _START_M = {
     "crash_test": 104, "snap_neg": 104,
     "floor_dive": 25, "floor_panic": 25, "floor_spin": 25,   # arm low -> low net
     "seq": 120, "seq_chain": 120,   # aerobatic routines: exempt, they climb high
+    "show": 25,   # one-video-per-airplane: arm low, Einflug, sequence
 }
 _start_m = _START_M.get(_man, 104)
 for _i, _a in enumerate(sys.argv):
@@ -139,7 +140,7 @@ for _i, _a in enumerate(sys.argv):
 # the way up (floor 30 m + margin) - and keep the FLOOR switch ON through
 # every phase. Any maneuver that descends through the net must be caught;
 # the batch gate calls a miss below 20 m.
-FLOOR_ON = "--floor" in sys.argv
+FLOOR_ON = "--floor" in sys.argv or _man == "show"   # show: net always on
 _CLIMB_TARGET_M = _start_m
 if FLOOR_ON and not _man.startswith("floor"):
     _start_m = 25.0
@@ -156,7 +157,7 @@ if "--imu-offset" in sys.argv:
 log = open(f"jsbsim_log_{_man}.csv", "w")
 log.write("t,phase,mode,fc_roll,fc_pitch,fc_yaw,js_roll,js_pitch,js_yaw,ias,alt,"
           "ail,ele,rud,thr,fc_thr,st_ail,st_ele,st_thr,st_rud,"
-          "st_arm,st_angle,st_inv,st_sel,fc_alt,tvc_p,tvc_y,x,y,gps_fix,gps_sat\n")
+          "st_arm,st_angle,st_inv,st_sel,fc_alt,tvc_p,tvc_y,x,y,gps_fix,gps_sat,flap\n")
 BOXIDS = read_boxids(m)
 _mode_cache = ["DISARMED", 0.0]     # [last mode string, last poll wall-time]
 _alt_cache = [0.0]                  # last FC-measured altitude
@@ -300,7 +301,7 @@ def loop(secs, phase, rc, thr_override=None, print_every=1.0, freeze=False, gps=
                   f"{ail:.2f},{ele:.2f},{rud:.2f},{thr:.2f},{fc_thr:.2f},"
                   f"{rc[0]},{rc[1]},{rc[2]},{rc[3]},{rc[4]},{rc[5]},{rc[6]},{rc[7]},"
                   f"{_alt_cache[0]:.1f},{tvcp:.2f},{tvcy:.2f},{plant.xy()[0]:.1f},{plant.xy()[1]:.1f},"
-                  f"{_gps_cache[0]},{_gps_cache[1]}\n")
+                  f"{_gps_cache[0]},{_gps_cache[1]},{getattr(plant, '_flap_pos', 0.0):.2f}\n")
         if time.time() - last > print_every:
             print(f"  [{phase:7}] FC {fr:+7.1f}/{fp:+6.1f}/{fy:3.0f} | JS {jr:+7.1f}/{jp:+6.1f}/{jy:5.1f} | "
                   f"IAS {plant.ias_kts():3.0f} alt {plant.z:5.0f} ele {ele:+.2f}")
@@ -328,18 +329,28 @@ fr, fp, fy = fc_att(m); jr, jp, jy = plant.rpy()
 print(f"Konventions-Check: FC {fr:+.1f}/{fp:+.1f} vs JS {jr:+.1f}/{jp:+.1f}  "
       f"({'OK' if abs(fr-jr)<15 and abs(fp-jp)<15 else 'MISMATCH -> Vorzeichen pruefen'})")
 
-print("=== CAL (run the HITL stream until bit9 clears) ===")
+print("=== CAL (run the HITL stream until the cal blockers clear) ===")
+# bit9 sensors calibrating, bit13 acc-not-calibrated: the HITL enable path
+# sets ACCELEROMETER_CALIBRATED on the first sim frame, but a boot race can
+# leave bit13 up - keep streaming until BOTH are gone
+_CAL_BLOCK = FLAG_CAL | (1 << 13)
 t0 = time.time()
-while (arming_flags(m) & FLAG_CAL) and time.time() - t0 < 25:
+while (arming_flags(m) & _CAL_BLOCK) and time.time() - t0 < 40:
     loop(1.0, "cal", rc_ch(angle=RC_HIGH), print_every=4, freeze=True)
 print("cal fertig, flags=0x%X" % arming_flags(m))
 
 print("=== ARM (toggle cycles until ARMED) ===")
 t0 = time.time()
-while not (arming_flags(m) & FLAG_ARMED) and time.time() - t0 < 20:
+while not (arming_flags(m) & FLAG_ARMED) and time.time() - t0 < 30:
     loop(1.0, "armL", rc_ch(thr=RC_LOW, arm=RC_LOW, angle=RC_HIGH), print_every=9, freeze=True)
     loop(1.2, "armH", rc_ch(thr=RC_LOW, arm=RC_HIGH, angle=RC_HIGH), print_every=9, freeze=True)
 print("ARMED:", bool(arming_flags(m) & FLAG_ARMED), f"flags=0x{arming_flags(m):X}")
+if not (arming_flags(m) & FLAG_ARMED):
+    # NEVER fly dead: an unarmed FC outputs zero throttle and the whole
+    # flight glides silently into the ground (measured) - abort loudly so
+    # the runner can restart the SITL and retry
+    log.close()
+    raise SystemExit(f"ABORT: FC wuerde nicht armen, flags=0x{arming_flags(m):X}")
 
 # released from the frozen IC only now: level + settle for a few seconds so
 # the whole loop (plant, AHRS, controller) is in steady state before testing
@@ -368,6 +379,8 @@ MAN_RC = {   # SEL detents: 1270 INVERT / 1510 KN L / 1750 KN R / 1985 HANG
                                                       # sequence figure_script.py programmed
     "seq_chain":   dict(angle=1675),                  # three routines back-to-back,
                                                       # reprogrammed via MSP between legs
+    "show":        dict(angle=RC_HIGH),               # one video per airplane:
+                                                      # capability-derived sequence
 }[MAN]
 thrM = 1500 if MAN in ("hang", "hang_tvc") else 1650   # level trim; holds start stable (hang: hover PID owns)
 # --thr <us>: maneuver-throttle override for airframes whose power differs
@@ -378,11 +391,13 @@ if "--thr" in sys.argv:
 
 
 # --- MANUAL: pilot flies by hand in ANGLE so the sticks visibly move,
-#     then we flip the figure switch -> the sequence takes over ---
-print("=== MANUAL (pilot flies by hand in ANGLE, sticks visibly move) ===")
-loop(3, "manual", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH, ail=1250))
-loop(3, "manual", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH, ail=1750))
-loop(3, "manual", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH))
+#     then we flip the figure switch -> the sequence takes over.
+#     The show format skips this (Daniel: no manual intro). ---
+if MAN != "show":
+    print("=== MANUAL (pilot flies by hand in ANGLE, sticks visibly move) ===")
+    loop(3, "manual", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH, ail=1250))
+    loop(3, "manual", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH, ail=1750))
+    loop(3, "manual", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH))
 
 if FLOOR_ON and not MAN.startswith("floor") and plant.z < _CLIMB_TARGET_M - 5:
     # scripted climb to the maneuver altitude; the floor arms on the way
@@ -503,6 +518,153 @@ elif MAN == "seq_chain":
         loop(_secs, f"seq {_leg}", rc_ch(thr=1800, arm=RC_HIGH, angle=1525), print_every=0.7)
         loop(4, "between", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH), print_every=1)
     loop(3, "exit", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
+elif MAN == "show":
+    # ONE VIDEO PER AIRPLANE: the sequence derives from the actuator-true
+    # repertoire in airframe_config.py - no maneuver an airframe obviously
+    # cannot fly. No manual intro; a horizontal base line before every
+    # figure; the FLOOR switch stays on the whole flight (armed during the
+    # climbs). Opens with the Einflug: the level throttle is found by
+    # feedback and recorded per model in airframe_trim.json.
+    import json as _json
+    import os as _os
+    from airframe_config import AIRFRAMES as _AF
+    _act, _rep = _AF[_model]
+    if _act == "GYRO":
+        raise SystemExit("the gyro flies its own tip-over pair, not `show`")
+
+    print(f"=== EINFLUG {_model} (find the level throttle) ===")
+    _thrL, _z0 = 1550.0, plant.z
+    for _ in range(20):
+        loop(0.5, "einflug", rc_ch(thr=int(_thrL), arm=RC_HIGH, angle=RC_HIGH),
+             print_every=2)
+        _vz = (plant.z - _z0) / 0.5
+        _z0 = plant.z
+        _thrL = min(1900.0, max(1100.0, _thrL - 18.0 * _vz))
+    thrL = int(_thrL)
+    print(f"Einflug: level throttle {thrL}")
+    _tf = (_json.load(open("airframe_trim.json"))
+           if _os.path.exists("airframe_trim.json") else {})
+    _tf[_model] = dict(thr_level=thrL)
+    with open("airframe_trim.json", "w") as _fh:
+        _json.dump(_tf, _fh, indent=1)
+    with open(f"jsbsim_params_{_man}.txt", "a") as _pf:
+        _pf.write(f"model={_model}\nthr_level={thrL}\n")
+
+    def _to_alt(target, tmax=60):
+        # transit to the figure's entry altitude BY ALTITUDE, not by time
+        # (a slow climber gets as long as it needs - the PT-17 lesson),
+        # then a horizontal base line at the trimmed throttle. The descent
+        # is SPEED-AWARE: leaving a slow figure (harrier/hang exit) the
+        # elevator has no authority - power up level first, only a flying
+        # airframe can be pushed down (the mush-climb trap).
+        _t0 = _frames[0]
+        while abs(plant.z - target) > 4 and (_frames[0] - _t0) * DT < tmax:
+            if plant.z < target - 6:
+                loop(0.7, "transit", rc_ch(thr=1900, ele=1800, arm=RC_HIGH,
+                                           angle=RC_HIGH), print_every=2)
+            elif plant.z < target:
+                # fine approach from below: gentle, no overshoot
+                loop(0.7, "transit", rc_ch(thr=min(1900, thrL + 150), ele=1650,
+                                           arm=RC_HIGH, angle=RC_HIGH), print_every=2)
+            elif plant.ias_kts() < 22:
+                loop(0.7, "transit", rc_ch(thr=min(1900, thrL + 200), arm=RC_HIGH,
+                                           angle=RC_HIGH), print_every=2)
+            else:
+                loop(0.7, "transit", rc_ch(thr=max(1100, thrL - 200), ele=1300,
+                                           arm=RC_HIGH, angle=RC_HIGH), print_every=2)
+        loop(3, "base", rc_ch(thr=thrL, arm=RC_HIGH, angle=RC_HIGH), print_every=2)
+
+    def _exit():
+        # energy-aware exit: a fast figure ends with excess speed, and at
+        # the trimmed throttle ANGLE converts that straight into a zoom
+        # over the 122 m ceiling (measured: 71 kts -> 146 m). Bleed at
+        # idle with the nose SLIGHTLY down - level-pitch bleeding still
+        # zooms (+12 m measured), only drag on a shallow downline kills
+        # the energy without buying height.
+        loop(4, "bleed", rc_ch(thr=1100, ele=1400, arm=RC_HIGH, angle=RC_HIGH),
+             print_every=0.7)
+        loop(2, "exit", rc_ch(thr=thrL, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
+
+    def _fig_inverted():
+        _to_alt(95)
+        loop(8, "inverted", rc_ch(thr=thrL, arm=RC_HIGH, angle=RC_LOW, sel=1270),
+             print_every=0.7)
+        _exit()
+
+    def _fig_roll():
+        _to_alt(95)
+        loop(8, "roll", rc_ch(thr=min(1900, thrL + 250), arm=RC_HIGH, angle=1525),
+             print_every=0.7)
+        _exit()
+
+    def _fig_loop():
+        # ONE loop (fig_loop_rate 90 deg/s = 4 s) plus margin; throttle
+        # relative to the trim - a T/W-2 airframe at full power hits
+        # 100 kts in the downline and the exit zooms out of the ceiling
+        _to_alt(60)
+        loop(6, "loop", rc_ch(thr=min(1900, thrL + 400), arm=RC_HIGH, angle=1225),
+             print_every=0.7)
+        _exit()
+
+    def _fig_knife(fast=False):
+        # knife edge needs speed: the fuselage carries the weight on the
+        # rudder - but only modest margin over the trim, an overpowered
+        # airframe otherwise accelerates through the hold (ias 70 measured
+        # at trim+150) and the exit energy blows the ceiling
+        _thr = min(1900, thrL + (300 if fast else 100))
+        _to_alt(85)
+        loop(6, "knife-L", rc_ch(thr=_thr, arm=RC_HIGH, angle=RC_LOW, sel=1510),
+             print_every=0.7)
+        loop(3, "base", rc_ch(thr=thrL, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
+        loop(6, "knife-R", rc_ch(thr=_thr, arm=RC_HIGH, angle=RC_LOW, sel=1750),
+             print_every=0.7)
+        _exit()
+
+    def _fig_spin():
+        _to_alt(100)
+        loop(3, "spin-hold", rc_ch(thr=thrL, arm=RC_HIGH, angle=1375), print_every=0.7)
+        loop(5, "spin-rud", rc_ch(thr=1000, rud=2000, arm=RC_HIGH, angle=1375),
+             print_every=0.7)
+        loop(4, "rud-release", rc_ch(thr=thrL, arm=RC_HIGH, angle=1375), print_every=0.7)
+        _exit()
+
+    def _fig_hang():
+        # the pull converts the base-line speed to height (v^2/2g plus the
+        # hover-PID settle) - enter low so the hang sits mid-window; the
+        # exit dive rebuilds speed, so it too bleeds at idle first
+        _to_alt(65)
+        loop(10, "hang", rc_ch(thr=1500, arm=RC_HIGH, angle=RC_LOW, sel=1985),
+             print_every=0.7)
+        _exit()
+
+    def _fig_flaps_harrier():
+        # slow flaps out (2 s servo travel), high alpha, reduced power -
+        # the blown-flap harrier pass
+        _to_alt(65)
+        plant.set_flaps(1.0)
+        loop(3, "flaps-out", rc_ch(thr=thrL, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
+        loop(10, "harrier", rc_ch(thr=max(1100, thrL - 150), ele=1900, arm=RC_HIGH,
+                                  angle=RC_HIGH), print_every=0.7)
+        plant.set_flaps(0.0)
+        loop(4, "exit", rc_ch(thr=thrL, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
+
+    def _fig_flaps_slow():
+        # full flaps, reduced power: the slow pass (a10/binary class)
+        _to_alt(60)
+        plant.set_flaps(1.0)
+        loop(8, "flaps-slow", rc_ch(thr=max(1100, thrL - 120), arm=RC_HIGH,
+                                    angle=RC_HIGH), print_every=0.7)
+        plant.set_flaps(0.0)
+        loop(4, "exit", rc_ch(thr=thrL, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
+
+    _FIGS = {"inverted": _fig_inverted, "roll": _fig_roll, "loop": _fig_loop,
+             "knife": _fig_knife, "knife_fast": lambda: _fig_knife(fast=True),
+             "spin": _fig_spin, "hang": _fig_hang,
+             "flaps_harrier": _fig_flaps_harrier, "flaps_slow": _fig_flaps_slow}
+    for _r in _rep:
+        print(f"=== SHOW {_model}: {_r} ===")
+        _FIGS[_r]()
+    _to_alt(40)
 elif MAN == "inverted_stick":
     # ANGLE-semantics stick offsets: half aileron must carve a HELD angle
     # offset from the inverted reference (not a rate), releasing returns
