@@ -14,7 +14,7 @@
 <fdm_config name="turbotimber" version="2.0" release="ALPHA">
   <fileheader>
     <author>Daniel Haensse</author>
-    <description>Turbo Timber Evolution 1.5m class STOL trainer, slotted flaps</description>
+    <description>Turbo Timber Evolution 1.5m class STOL trainer, slotted flaps, 4S power (T/W ~2)</description>
   </fileheader>
 
   <metrics>
@@ -60,14 +60,20 @@
     </contact>
   </ground_reactions>
 
-  <!-- Idealized RC thruster (see aerobat3d): 3.6 LBS ~ 16 N static
-       => T/W ~ 1.0 on 1.6 kg - the "Turbo" in the name is deserved. -->
+  <!-- Idealized RC thruster (see aerobat3d): 7.0 LBS ~ 31 N static.
+       4S with the factory 11x7.5 3-blade: measured 660 W (HobbySquawk
+       review wattmeter; 360 W on 3S) x ~4.8-5 g/W for an 11-inch prop
+       ~ 3.2 kg static on 1.6 kg => T/W ~2.0 - hovers at roughly half
+       throttle and punches out of the hang (pilot experience: 10-20 m
+       within the first seconds). Constant with airspeed like all bench
+       thrusters - steady vertical speed is optimistic, transients are
+       honest. -->
   <external_reactions>
     <force name="motor" frame="BODY" unit="LBS">
       <function>
         <product>
           <property> fcs/throttle-cmd-norm </property>
-          <value> 3.6 </value>
+          <value> 7.0 </value>
         </product>
       </function>
       <location unit="M"> <x> 0.40 </x> <y> 0 </y> <z> 0 </z> </location>
@@ -77,7 +83,7 @@
       <function>
         <product>
           <property> fcs/throttle-cmd-norm </property>
-          <value> 0.06 </value>
+          <value> 0.12 </value>
         </product>
       </function>
       <location unit="M"> <x> 0.40 </x> <y> 0.5 </y> <z> 0 </z> </location>
@@ -87,11 +93,27 @@
       <function>
         <product>
           <property> fcs/throttle-cmd-norm </property>
-          <value> 0.06 </value>
+          <value> 0.12 </value>
         </product>
       </function>
       <location unit="M"> <x> 0.40 </x> <y> -0.5 </y> <z> 0 </z> </location>
       <direction> <x> 0 </x> <y> 0 </y> <z> 1 </z> </direction>
+    </force>
+    <force name="blown-flap" frame="BODY" unit="LBS">
+      <!-- BLOWN flap: the prop stream gives the flapped wing dynamic
+           pressure even at zero airspeed. The force acts perpendicular to
+           the chord = body UP - which is why it helps the deep harrier
+           (nose 40-60 deg) but NOT a vertical hover, where it points
+           sideways. Slotted, fully washed: ~the full weight at full throttle + flap. -->
+      <function>
+        <product>
+          <property> fcs/throttle-cmd-norm </property>
+          <property> fcs/flap-pos-norm </property>
+          <value> 3.5 </value>
+        </product>
+      </function>
+      <location unit="M"> <x> 0.0 </x> <y> 0 </y> <z> 0 </z> </location>
+      <direction> <x> 0 </x> <y> 0 </y> <z> -1 </z> </direction>
     </force>
   </external_reactions>
 

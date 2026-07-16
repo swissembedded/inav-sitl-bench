@@ -75,6 +75,8 @@ fc_thr = [float(r.get("fc_thr", r.get("thr", 0))) for r in rows]  # FC's own thr
 tvc_p = [float(r.get("tvc_p", 0)) for r in rows]   # vectored nozzle servos
 tvc_y = [float(r.get("tvc_y", 0)) for r in rows]
 HAS_TVC = MAN == "hang_tvc"
+flap = [float(r.get("flap", 0)) for r in rows]   # 0..1 deployed
+HAS_FLAP = any(v > 0.01 for v in flap)
 ias = [float(r["ias"]) for r in rows]
 fc_alt = [float(r.get("fc_alt", r["alt"])) for r in rows]  # FC baro-estimated altitude
 # baro is referenced to the boot zero (AGL), truth is MSL -- shift the baro
@@ -250,6 +252,9 @@ _out_colors = ["#ff7f0e", "#2ca02c", "#1f77b4", "#d62728"]
 if HAS_TVC:
     _out_labels += ["tvc yaw", "tvc pitch"]
     _out_colors += ["#8c564b", "#9467bd"]
+if HAS_FLAP:
+    _out_labels += ["flaps"]
+    _out_colors += ["#7f7f7f"]
 _n_out = len(_out_labels)
 axS.set_xlim(-1.1, 1.1); axS.set_ylim(-0.6, _n_out - 0.4)
 axS.set_yticks([])
@@ -305,6 +310,8 @@ def frame(i):
     _vals = [fc_thr[i], cs_rud[i], cs_ele[i], cs_ail[i]]
     if HAS_TVC:
         _vals += [tvc_y[i], tvc_p[i]]
+    if HAS_FLAP:
+        _vals += [flap[i]]
     for b, val in zip(bars, _vals):
         b.set_width(val)
     levers.set_data([0, 1, 2, 3],
