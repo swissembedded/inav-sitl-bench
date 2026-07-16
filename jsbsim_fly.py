@@ -91,7 +91,7 @@ def _positional(argv):
         if skip:
             skip = False
             continue
-        if a in ("--set", "--imu-offset"):
+        if a in ("--set", "--imu-offset", "--model", "--start-m", "--gust-dir"):
             skip = True
             continue
         if not a.startswith("--"):
@@ -100,6 +100,10 @@ def _positional(argv):
 
 _man = next(iter(_positional(sys.argv[1:])), "inverted")
 _model = "c172p" if "--c172" in sys.argv else ("funjet" if _man == "hang_tvc" else "aerobat3d")
+# --model <name>: fly any plant airframe (turbotimber, kingfisher,
+# dragonfly) under the real FC instead of the maneuver's default
+if "--model" in sys.argv:
+    _model = sys.argv[sys.argv.index("--model") + 1]
 # Every flight must stay within ~120 m: that is the legal RC ceiling and above
 # it the aircraft is too small to see in the video. Each maneuver starts at
 # (target apex - its own climb gain) so the peak lands at ~115 m. Descending

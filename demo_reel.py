@@ -59,6 +59,27 @@ _TRACK = {"roll": "velocities/p-rad_sec", "pitch": "velocities/q-rad_sec",
           "yaw": "velocities/r-rad_sec"}
 
 
+def switch_bands(name):
+    """Map the flown phase onto the pilot's switch layout (same bands as
+    the bench provisioning), so the replay panel tells the truth: the mode
+    selector rides the figure, the SEL switch rides the held attitude, and
+    the P-attitude legs read as ANGLE."""
+    ang, sel = 1900, 1000            # ANGLE, SEL off
+    if name == "loop":
+        ang = 1225                   # F LOOP
+    elif name.startswith("spin"):
+        ang = 1375                   # F-SPIN
+    elif name == "roll":
+        ang = 1675                   # F ROLL
+    elif name == "invert":
+        sel = 1270                   # INV
+    elif name == "knife":
+        sel = 1750                   # KN R (we roll to +90)
+    elif name in ("hang", "water-hang", "water-settle", "hover-try"):
+        sel = 1985                   # HANG
+    return ang, sel
+
+
 def fly(model, phases, alt_ft, kts):
     p = JSBSimPlant(model=model, alt_ft=alt_ft, kts=kts, dt=DT)
     pilot = Pilot()
@@ -109,6 +130,7 @@ def fly(model, phases, alt_ft, kts):
             r, pit, yw = p.rpy()
             xy = p.xy()
             peak = max(peak, p.z)
+            sw_ang, sw_sel = switch_bands(ph["name"])
             w.writerow([f"{t:.2f}", ph["name"], ph.get("mode", "DEMO"),
                         f"{r:.1f}", f"{pit:.1f}", f"{yw:.1f}",
                         f"{r:.1f}", f"{pit:.1f}", f"{yw:.1f}",
@@ -117,7 +139,7 @@ def fly(model, phases, alt_ft, kts):
                         f"{thr:.2f}", f"{thr:.2f}",
                         f"{1500 + ail * 500:.0f}", f"{1500 + ele * 500:.0f}",
                         f"{1000 + thr * 1000:.0f}", f"{1500 + rud * 500:.0f}",
-                        "2000", "1500", "1500", "1500",
+                        "2000", f"{sw_ang}", "1000", f"{sw_sel}",
                         f"{p.z:.1f}", "0", "0",
                         f"{xy[0]:.1f}", f"{xy[1]:.1f}", "0", "0",
                         f"{flap_cur:.2f}"])
