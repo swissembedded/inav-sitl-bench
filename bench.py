@@ -133,6 +133,11 @@ def provision():
     # BARO_ONLY: aerobatic attitudes lose GPS; stand-in for the planned
     # lock-quality-gated auto switch (GPS only weighted in when locked)
     msp.set_setting("inav_default_alt_sensor", struct.pack("<B", 3))
+    # servo output lowpass (biquad, per servo, at loop rate): smooths
+    # D-term noise off the servos (wear) - Jetrell's point on the PR. 20 Hz
+    # is the INAV default; pinned here so the bench validates exactly the
+    # output shaping a real model flies with, independent of default drift
+    msp.set_setting("servo_lpf_hz", struct.pack("<H", 20))
     msp.save_eeprom()
     print("provisioned + saved, SITL reboots now")
 
