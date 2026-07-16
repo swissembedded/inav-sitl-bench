@@ -82,6 +82,14 @@ def verify(tag, man):
     rows = list(csv.DictReader(open(f"jsbsim_log_{tag}.csv")))
     fails = []
     alts = [float(r["alt"]) for r in rows]
+    # a terrain strike makes every later number garbage (the contact
+    # springs blow up under deep penetration) - report the crash itself
+    # and judge nothing after it
+    crash = next((i for i, a in enumerate(alts) if a < 0.0), None)
+    if crash is not None:
+        t = rows[crash]["t"]
+        ph = rows[crash]["phase"]
+        return False, [f"crashed into terrain at t={t}s ({ph})"]
     if max(alts) > 122.0:
         fails.append(f"peak {max(alts):.0f} m > 122")
     floor_limit = 15.0 if man.startswith("floor") else 5.0
