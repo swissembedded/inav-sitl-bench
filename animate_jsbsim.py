@@ -76,7 +76,7 @@ tvc_p = [float(r.get("tvc_p", 0)) for r in rows]   # vectored nozzle servos
 tvc_y = [float(r.get("tvc_y", 0)) for r in rows]
 HAS_TVC = MAN == "hang_tvc"
 flap = [float(r.get("flap", 0)) for r in rows]   # 0..1 deployed
-HAS_FLAP = any(v > 0.01 for v in flap)
+HAS_FLAP = True   # identical panel in every video
 ias = [float(r["ias"]) for r in rows]
 fc_alt = [float(r.get("fc_alt", r["alt"])) for r in rows]  # FC baro-estimated altitude
 # baro is referenced to the boot zero (AGL), truth is MSL -- shift the baro
@@ -228,30 +228,27 @@ dotR, = axIN.plot([1.4], [0], "o", ms=7, color="#1f77b4")
 
 # 3) pilot mode switches (lever position = channel value)
 axSw = panel(PY[2], "switches")
-# Switch panel: DETENT logic, one detent per provisioned band plus an
-# explicit OFF detent. The lever snaps to the label of the band the raw
-# channel value falls into - never between labels. Bands MUST match
-# bench.py provisioning.
+# DETENT logic, identical in EVERY video: one detent per provisioned band
+# plus an explicit OFF; the lever snaps onto the active band's label
+# (labels = the FC box names). Bands mirror bench.py provisioning.
 SW_BANDS = {
-    "st_angle": [("aus", 0), ("F LOOP", 1150), ("F-SPIN", 1300),
-                 ("F SEQ", 1450), ("F ROLL", 1600), ("ANGLE", 1750)],
-    "st_inv":   [("aus", 0), ("FLOOR", 1700)],
-    "st_sel":   [("aus", 0), ("INV", 1150), ("KN L", 1390),
-                 ("KN R", 1630), ("HANG", 1870)],
+    "st_angle": [("OFF", 0), ("F LOOP", 1150), ("FLAT SPIN", 1300),
+                 ("F ROLL", 1450), ("F SEQ", 1600), ("ANGLE", 1750)],
+    "st_inv":   [("OFF", 0), ("FLOOR", 1700)],
+    "st_sel":   [("OFF", 0), ("INVERT", 1150), ("KNIFE L", 1390),
+                 ("KNIFE R", 1630), ("P-HANG", 1870)],
 }
 SW_COLS = ["st_angle", "st_inv", "st_sel"]
 
 def sw_detent(key, val):
-    bands = SW_BANDS[key]
     idx = 0
-    for i, (_, lo) in enumerate(bands):
+    for i, (_, lo) in enumerate(SW_BANDS[key]):
         if val >= lo:
             idx = i
     return idx
 
 def sw_y(key, idx):
-    n = len(SW_BANDS[key])
-    return -1.0 + 2.0 * idx / (n - 1)
+    return -1.0 + 2.0 * idx / (len(SW_BANDS[key]) - 1)
 
 axSw.set_xlim(-0.5, 3.4); axSw.set_ylim(-1.35, 1.35)
 axSw.set_xticks([0, 1, 2])
@@ -317,7 +314,8 @@ def frame(i):
     gtxt = ""
     if gps is not None:
         gtxt = f"  {gps[i][0]}" + (f" {gps[i][1]}sat" if gps[i][1] else "")
-    txt.set_text(f"t={t[i]:5.1f}s  {ph[i].upper():7s}  "
+    _arm = "ARMED" if sw["st_arm"][i] > 1500 else "DISARMED"
+    txt.set_text(f"t={t[i]:5.1f}s  {_arm}  {ph[i].upper():7s}  "
                  f"roll={math.degrees(rpy[i][0]):+6.0f}  pitch={math.degrees(rpy[i][1]):+5.0f}  "
                  f"yaw={math.degrees(rpy[i][2]) % 360.0:3.0f} deg  alt={z[i]:4.0f} m{gtxt}")
     marker.set_xdata([t[i], t[i]])

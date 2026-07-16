@@ -49,8 +49,8 @@ RC_ALTFLOOR_ON = 1900   # ALT FLOOR is ALONE on CH_INVERTED (1700-2100), a
                         # dedicated switch toggled independently of the flight mode
 RC_FSPIN_ON   = 1375    # FLAT SPIN band on the CH_ANGLE flight-mode selector
 RC_FIGLOOP_ON = 1225    # FIGURE LOOP band on the CH_ANGLE selector
-RC_FIGSEQ_ON  = 1525    # FIGURE SEQ band on the CH_ANGLE selector
-RC_FIGROLL_ON = 1675    # FIGURE ROLL band on the CH_ANGLE selector
+RC_FIGSEQ_ON  = 1675    # FIGURE SEQ band on the CH_ANGLE selector
+RC_FIGROLL_ON = 1525    # FIGURE ROLL band on the CH_ANGLE selector
 
 # figure sequence segment types (figure_sequencer.h)
 FIGSEG_END, FIGSEG_ROLL, FIGSEG_PITCH, FIGSEG_HOLD, FIGSEG_WAIT_ALT, FIGSEG_WAIT_TIME = range(6)
@@ -105,7 +105,7 @@ def provision():
     # Three switches, no mode ever shares a position with a mutually-exclusive
     # one and no range is ever remapped in flight:
     #   CH_ANGLE  = flight-mode selector (one of these at a time):
-    #               FIGLOOP / FSPIN / FIGSEQ / FIGROLL / ANGLE
+    #               FIGLOOP / FSPIN / FIGROLL / FIGSEQ / ANGLE
     #   CH_INVERTED = FLOOR, ALONE on its own switch, so it can be armed once
     #               and left on independently of whatever flight mode is picked
     #   CH_SELECT = attitude-target selector: off / INVERT / KNIFE L / KNIFE R /
