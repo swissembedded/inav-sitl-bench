@@ -31,8 +31,15 @@ FLIP_RUD = "--flip-rud" in sys.argv
 LOCKSTEP = "--lockstep" in sys.argv
 
 RC_LOW, RC_MID, RC_HIGH = 1000, 1500, 2000
+# --thr-scale <f>: scale EVERY phase's throttle toward idle (entry, holds,
+# the MAN_RC per-maneuver values - all of it). The maneuver choreography is
+# calibrated on the aerobat3d; an airframe with a different power loading
+# flies the same script at a scaled throttle. Default 1.0 = untouched.
+THR_SCALE = (float(sys.argv[sys.argv.index("--thr-scale") + 1])
+             if "--thr-scale" in sys.argv else 1.0)
 # channels: A E T R ARM ANGLE INVERT SELECT  (bench provisioning layout)
 def rc_ch(thr=RC_LOW, arm=RC_LOW, angle=RC_LOW, floor=RC_LOW, sel=RC_LOW, ele=RC_MID, ail=RC_MID, rud=RC_MID):
+    thr = int(round(1000 + (thr - 1000) * THR_SCALE))
     # angle = flight-mode selector (CH_ANGLE): FIGLOOP 1225 / FSPIN 1375 /
     #         FIGSEQ 1525 / FIGROLL 1675 / ANGLE >=1750
     # floor = FLOOR switch (CH_INVERTED), its own channel: >=1700 arms it
@@ -91,7 +98,7 @@ def _positional(argv):
         if skip:
             skip = False
             continue
-        if a in ("--set", "--imu-offset", "--model", "--start-m", "--gust-dir", "--thr"):
+        if a in ("--set", "--imu-offset", "--model", "--start-m", "--gust-dir", "--thr", "--thr-scale"):
             skip = True
             continue
         if not a.startswith("--"):
