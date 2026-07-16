@@ -167,6 +167,18 @@ AIRFRAMES = {
         cm0=0.005, cm_a=-0.28, cm_ele=-0.30, roll_ail=0.18,
         yaw_rud=0.05, pw_ele=0.0, pw_rud=0.0, pw_ail=0.0,
         dihedral=-0.03, iyy_scale=0.7),
+    # Durafly D.H.100 Vampire V3 (RCAF Silver): 1100 mm twin-boom jet,
+    # 1050 g, 70 mm 5-blade EDF - no wash, proper twin-fin rudders,
+    # broad straight wing (~46 g/dm2).
+    "vampire": dict(
+        desc="Durafly DH.100 Vampire V3, 1.1 m twin-boom 70mm EDF",
+        span=1.10, area=0.23, m_empty=0.83, m_batt=0.22,
+        thrust_lbf=3.0, thr_xz=(-0.05, 0.0), torque_lbf=0.0,
+        cl0=0.18, clmax=1.10, a_max_deg=14, clmin=-0.70,
+        cd0=0.036, k_ind=0.070,
+        cm0=0.012, cm_a=-0.48, cm_ele=-0.55, roll_ail=0.15,
+        yaw_rud=0.12, pw_ele=0.0, pw_rud=0.0, pw_ail=0.0,
+        dihedral=-0.04, iyy_scale=1.0),
 }
 
 TPL = """<?xml version="1.0"?>
