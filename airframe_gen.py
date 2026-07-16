@@ -100,6 +100,73 @@ AIRFRAMES = {
         cm0=0.020, cm_a=-0.50, cm_ele=-0.55, roll_ail=0.15,
         yaw_rud=0.12, pw_ele=-5.0, pw_rud=4.0, pw_ail=1.5,
         dihedral=-0.05, iyy_scale=1.0),
+    # Freewing Lippisch P.15 Diana 64mm EDF: 750 mm tailless delta with a
+    # fin - EDF (no wash), light, T/W ~1.4: the hot little delta.
+    "lippisch": dict(
+        desc="Freewing Lippisch P.15 Diana 64mm EDF, 750 mm tailless delta",
+        span=0.75, area=0.13, m_empty=0.26, m_batt=0.16,
+        thrust_lbf=1.3, thr_xz=(-0.05, 0.0), torque_lbf=0.0,
+        cl0=0.10, clmax=1.00, a_max_deg=16, clmin=-0.70,
+        cd0=0.032, k_ind=0.090,
+        cm0=0.005, cm_a=-0.30, cm_ele=-0.35, roll_ail=0.18,
+        yaw_rud=0.08, pw_ele=0.0, pw_rud=0.0, pw_ail=0.0,
+        dihedral=-0.03, iyy_scale=0.7),
+    # Freewing MiG-15 64mm EDF: 700 mm swept-wing jet, 470 g - EDF, no
+    # wash, has a proper rudder, warbird-jet loading (~47 g/dm2).
+    "mig15": dict(
+        desc="Freewing MiG-15 64mm EDF, 700 mm swept jet",
+        span=0.70, area=0.10, m_empty=0.34, m_batt=0.13,
+        thrust_lbf=1.3, thr_xz=(-0.05, 0.0), torque_lbf=0.0,
+        cl0=0.12, clmax=1.05, a_max_deg=14, clmin=-0.75,
+        cd0=0.035, k_ind=0.080,
+        cm0=0.008, cm_a=-0.45, cm_ele=-0.50, roll_ail=0.15,
+        yaw_rud=0.10, pw_ele=0.0, pw_rud=0.0, pw_ail=0.0,
+        dihedral=-0.02, iyy_scale=1.0),
+    # Dynam PT-17 Stearman 1300 mm: BIPLANE - two wings worth of area and
+    # drag on 2.15 kg (4S), gentle and slow, big prop torque.
+    "pt17": dict(
+        desc="Dynam PT-17 Stearman, 1.3 m biplane",
+        span=1.30, area=0.55, m_empty=1.80, m_batt=0.35,
+        thrust_lbf=2.9, thr_xz=(0.35, 0.0), torque_lbf=0.10,
+        cl0=0.35, clmax=1.30, a_max_deg=13, clmin=-0.45,
+        cd0=0.075, k_ind=0.075,
+        cm0=0.030, cm_a=-0.55, cm_ele=-0.50, roll_ail=0.11,
+        yaw_rud=0.14, pw_ele=-6.0, pw_rud=5.0, pw_ail=1.0,
+        dihedral=-0.08, iyy_scale=1.0),
+    # Sonicmodell Binary 1200 mm: EPO twin-motor FPV/survey platform,
+    # ~1.8 kg loaded - twins modeled as one centered thruster (no
+    # differential yaw in the plant yet), zero wash over the tail.
+    "binary": dict(
+        desc="Sonicmodell Binary 1200 mm twin-motor FPV platform",
+        span=1.20, area=0.26, m_empty=1.45, m_batt=0.35,
+        thrust_lbf=3.3, thr_xz=(0.10, 0.0), torque_lbf=0.0,
+        cl0=0.30, clmax=1.25, a_max_deg=13, clmin=-0.50,
+        cd0=0.045, k_ind=0.062,
+        cm0=0.025, cm_a=-0.55, cm_ele=-0.50, roll_ail=0.13,
+        yaw_rud=0.12, pw_ele=0.0, pw_rud=0.0, pw_ail=0.0,
+        dihedral=-0.06, iyy_scale=1.0),
+    # Sonicmodell AR Wing Pro: 1000 mm EPP FPV flying wing - elevons
+    # only, no rudder (like the xeno, faster and heavier).
+    "arwing": dict(
+        desc="Sonicmodell AR Wing Pro, 1.0 m FPV flying wing (no rudder)",
+        span=1.00, area=0.26, m_empty=0.60, m_batt=0.25,
+        thrust_lbf=1.8, thr_xz=(-0.10, 0.02), torque_lbf=0.04,
+        cl0=0.12, clmax=1.05, a_max_deg=14, clmin=-0.70,
+        cd0=0.028, k_ind=0.075,
+        cm0=0.008, cm_a=-0.25, cm_ele=-0.28, roll_ail=0.20,
+        yaw_rud=0.0, pw_ele=0.0, pw_rud=0.0, pw_ail=0.0,
+        dihedral=-0.03, iyy_scale=0.6),
+    # ZOHD Delta Strike: 600 mm EPP delta with a 50 mm EDF - tiny, hot,
+    # elevons plus a small fin rudder, no wash.
+    "deltastrike": dict(
+        desc="ZOHD Delta Strike, 600 mm EPP EDF delta",
+        span=0.60, area=0.12, m_empty=0.45, m_batt=0.20,
+        thrust_lbf=1.1, thr_xz=(-0.08, 0.0), torque_lbf=0.0,
+        cl0=0.10, clmax=1.00, a_max_deg=16, clmin=-0.70,
+        cd0=0.034, k_ind=0.095,
+        cm0=0.005, cm_a=-0.28, cm_ele=-0.30, roll_ail=0.18,
+        yaw_rud=0.05, pw_ele=0.0, pw_rud=0.0, pw_ail=0.0,
+        dihedral=-0.03, iyy_scale=0.7),
 }
 
 TPL = """<?xml version="1.0"?>

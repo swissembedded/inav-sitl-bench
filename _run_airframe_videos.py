@@ -31,6 +31,8 @@ MODELS = {
     "dragonfly": 1750,
     "easyglider": None, "easystar": None, "xeno": None,
     "aeroscout": None, "a10": None, "icona5": None, "bf109": None,
+    "lippisch": None, "mig15": None, "pt17": None, "binary": None,
+    "arwing": None, "deltastrike": None,
 }
 TITLE = {
     "inverted": "inverted hold through a gust and a rudder turn",

@@ -15,7 +15,8 @@ import sys
 
 CEILING = 118.0
 MODELS = ["turbotimber", "kingfisher", "dragonfly",
-          "easyglider", "easystar", "xeno", "aeroscout", "a10", "icona5", "bf109"]
+          "easyglider", "easystar", "xeno", "aeroscout", "a10", "icona5", "bf109",
+          "lippisch", "mig15", "pt17", "binary", "arwing", "deltastrike"]
 SCALES = ["0.5", "0.65", "0.8", "1.0"]
 
 
