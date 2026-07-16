@@ -91,7 +91,7 @@ def _positional(argv):
         if skip:
             skip = False
             continue
-        if a in ("--set", "--imu-offset", "--model", "--start-m", "--gust-dir"):
+        if a in ("--set", "--imu-offset", "--model", "--start-m", "--gust-dir", "--thr"):
             skip = True
             continue
         if not a.startswith("--"):
@@ -351,6 +351,11 @@ MAN_RC = {   # SEL detents: 1270 INVERT / 1510 KN L / 1750 KN R / 1985 HANG
                                                       # reprogrammed via MSP between legs
 }[MAN]
 thrM = 1500 if MAN in ("hang", "hang_tvc") else 1650   # level trim; holds start stable (hang: hover PID owns)
+# --thr <us>: maneuver-throttle override for airframes whose power differs
+# from the aerobat3d the default bands were trimmed on (a T/W-2 turbotimber
+# climbs out of the video ceiling at 1650)
+if "--thr" in sys.argv:
+    thrM = int(sys.argv[sys.argv.index("--thr") + 1])
 
 
 # --- MANUAL: pilot flies by hand in ANGLE so the sticks visibly move,
