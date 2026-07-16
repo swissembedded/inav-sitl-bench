@@ -73,8 +73,12 @@ PANEL_BARS = {
 # through the tilted disk, one-way bearing: airflow only spins it UP).
 GYRO_ROTOR = dict(
     disk_diameter_m=0.821,
-    rpm_nominal=1200.0,      # 821 mm class: tip speed ~52 m/s
-    rpm0_frac=0.7,           # pre-rotator reaches ~60-70% before the roll
+    rpm_nominal=450.0,       # Daniel-recherchiert: 400-500 rpm halten die
+                             # Hoehe (Blattspitze ~19 m/s - leichte Foam-
+                             # Scheibe, 1.1 kg/m2); Gas -> Fahrt -> Inflow
+                             # -> Drehzahl ist der einzige Hoehen-Hebel
+    rpm0_frac=0.7,           # pre-rotator: ~60-70% der Flugdrehzahl,
+                             # akkuabhaengig, keine Ziel-RPM (brushed)
     rpm_min_frac=0.4,        # below this the disk stops carrying (tip-over
                              # regime - the monitor case)
 )
