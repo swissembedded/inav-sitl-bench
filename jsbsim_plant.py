@@ -63,6 +63,10 @@ class JSBSimPlant:
     # works with instant surfaces would be lying to us.
     SERVO_SLEW_AIL_ELE = 1.0 / 0.06   # normalized units per second
     SERVO_SLEW_RUD     = 1.0 / 0.10
+    # Flap servo: the 9-12 g class slams the full flap range in ~0.08 s if
+    # commanded to - SLOW deployment comes from the FC's smix speed limit,
+    # not from the servo. The plant models the physical ceiling.
+    SERVO_SLEW_FLAP    = 1.0 / 0.08
 
     def set_controls(self, ail, ele, rud, thr01):
         # commands are TARGETS; step() slews the servo positions toward them
@@ -71,6 +75,11 @@ class JSBSimPlant:
                            max(-1.0, min(1.0, ele)),
                            max(-1.0, min(1.0, rud)))
         self.fdm["fcs/throttle-cmd-norm"] = max(0.0, min(1.0, thr01))
+
+    def set_flaps(self, f01):
+        # flap TARGET 0..1; step() slews it like the other servos. Models
+        # without flap aero (aerobat3d, funjet) just carry a dead property.
+        self._flap_cmd = max(0.0, min(1.0, f01))
 
     def _servo_step(self, span):
         if not hasattr(self, "_servo_pos"):
@@ -85,6 +94,12 @@ class JSBSimPlant:
         f["fcs/aileron-cmd-norm"] = self._servo_pos[0]
         f["fcs/elevator-cmd-norm"] = self._servo_pos[1]
         f["fcs/rudder-cmd-norm"] = self._servo_pos[2]
+        if not hasattr(self, "_flap_pos"):
+            self._flap_pos = getattr(self, "_flap_cmd", 0.0)
+        fcmd = getattr(self, "_flap_cmd", 0.0)
+        fstep = self.SERVO_SLEW_FLAP * span
+        self._flap_pos += max(-fstep, min(fstep, fcmd - self._flap_pos))
+        f["fcs/flap-cmd-norm"] = self._flap_pos
 
     BASE_DT = 0.001   # internal integration step; NEVER integrate coarser
                       # (40 ms steps blow up numerically -> NaN attitude)
