@@ -1,0 +1,312 @@
+<?xml version="1.0"?>
+<!--
+  dragonfly: Skynetic/Joysway Dragonfly Seaplane V2 700mm class - a
+  flying-boat PUSHER for the bench. Written from scratch for this project
+  (GPL-3.0-or-later, see repo LICENSE), same idealized-thruster structure
+  as aerobat3d, with the two traits that make a pylon pusher fly "like a
+  jet" and unlike everything else in this hangar:
+    1. The thrust line sits ~9 cm ABOVE the CG: throttle pitches the nose
+       DOWN (T*z ~0.75 Nm at full power - a big bite of the elevator
+       authority). Power-on go-arounds need up-elevator, prop hang fights
+       its own motor.
+    2. The tail is barely in the prop stream and the wing not at all:
+       propwash control authority is a fraction of a tractor's - at
+       walking speed the surfaces go soft. No 3D tricks on this one.
+  Low-AR wing (AR ~2.1): flat lift slope (~3.2/rad), late gentle stall
+  (CLmax ~1.0 at 20 deg), heavy induced drag - carries alpha like a jet
+  and bleeds energy like one. Hull adds side area ahead of the CG.
+  Water handling is NOT modeled (airstart only on the bench).
+  Coefficients are handbook estimates, good for behavior.
+  Specs: span 700 mm, S ~0.23 m2, AUW 575 g, thrust ~850 g (T/W ~1.5).
+-->
+<fdm_config name="dragonfly" version="2.0" release="ALPHA">
+  <fileheader>
+    <author>Daniel Haensse</author>
+    <description>Dragonfly Seaplane V2 700mm class flying-boat pusher, AR 2.1</description>
+  </fileheader>
+
+  <metrics>
+    <wingarea unit="M2"> 0.230 </wingarea>
+    <wingspan unit="M"> 0.700 </wingspan>
+    <chord unit="M"> 0.330 </chord>
+    <htailarea unit="M2"> 0.040 </htailarea>
+    <htailarm unit="M"> 0.50 </htailarm>
+    <vtailarea unit="M2"> 0.030 </vtailarea>
+    <vtailarm unit="M"> 0.50 </vtailarm>
+    <location name="AERORP" unit="M"> <x> 0.0 </x> <y> 0 </y> <z> 0 </z> </location>
+    <location name="EYEPOINT" unit="M"> <x> 0 </x> <y> 0 </y> <z> 0.1 </z> </location>
+    <location name="VRP" unit="M"> <x> 0 </x> <y> 0 </y> <z> 0 </z> </location>
+  </metrics>
+
+  <mass_balance>
+    <ixx unit="KG*M2"> 0.010 </ixx>
+    <iyy unit="KG*M2"> 0.020 </iyy>
+    <izz unit="KG*M2"> 0.026 </izz>
+    <emptywt unit="KG"> 0.435 </emptywt>
+    <location name="CG" unit="M"> <x> 0 </x> <y> 0 </y> <z> 0 </z> </location>
+    <pointmass name="battery">
+      <weight unit="KG"> 0.14 </weight>
+      <location unit="M"> <x> 0.05 </x> <y> 0 </y> <z> 0 </z> </location>
+    </pointmass>
+  </mass_balance>
+
+  <ground_reactions>
+    <contact type="BOGEY" name="HULL_F">
+      <location unit="M"> <x> 0.20 </x> <y> 0 </y> <z> -0.10 </z> </location>
+      <static_friction> 0.6 </static_friction> <dynamic_friction> 0.4 </dynamic_friction>
+      <spring_coeff unit="N/M"> 500 </spring_coeff> <damping_coeff unit="N/M/SEC"> 40 </damping_coeff>
+    </contact>
+    <contact type="BOGEY" name="HULL_L">
+      <location unit="M"> <x> -0.05 </x> <y> -0.20 </y> <z> -0.08 </z> </location>
+      <static_friction> 0.6 </static_friction> <dynamic_friction> 0.4 </dynamic_friction>
+      <spring_coeff unit="N/M"> 500 </spring_coeff> <damping_coeff unit="N/M/SEC"> 40 </damping_coeff>
+    </contact>
+    <contact type="BOGEY" name="HULL_R">
+      <location unit="M"> <x> -0.05 </x> <y> 0.20 </y> <z> -0.08 </z> </location>
+      <static_friction> 0.6 </static_friction> <dynamic_friction> 0.4 </dynamic_friction>
+      <spring_coeff unit="N/M"> 500 </spring_coeff> <damping_coeff unit="N/M/SEC"> 40 </damping_coeff>
+    </contact>
+  </ground_reactions>
+
+  <!-- Pylon pusher: 850 g ~ 8.3 N ~ 1.87 LBS, applied 9 cm ABOVE and
+       slightly behind the CG, so full throttle also produces the
+       nose-down couple a real pylon seaplane has. -->
+  <external_reactions>
+    <force name="motor" frame="BODY" unit="LBS">
+      <function>
+        <product>
+          <property> fcs/throttle-cmd-norm </property>
+          <value> 1.87 </value>
+        </product>
+      </function>
+      <location unit="M"> <x> -0.05 </x> <y> 0 </y> <z> 0.09 </z> </location>
+      <direction> <x> 1 </x> <y> 0 </y> <z> 0 </z> </direction>
+    </force>
+    <force name="prop-torque-r" frame="BODY" unit="LBS">
+      <function>
+        <product>
+          <property> fcs/throttle-cmd-norm </property>
+          <value> 0.03 </value>
+        </product>
+      </function>
+      <location unit="M"> <x> -0.05 </x> <y> 0.3 </y> <z> 0.09 </z> </location>
+      <direction> <x> 0 </x> <y> 0 </y> <z> -1 </z> </direction>
+    </force>
+    <force name="prop-torque-l" frame="BODY" unit="LBS">
+      <function>
+        <product>
+          <property> fcs/throttle-cmd-norm </property>
+          <value> 0.03 </value>
+        </product>
+      </function>
+      <location unit="M"> <x> -0.05 </x> <y> -0.3 </y> <z> 0.09 </z> </location>
+      <direction> <x> 0 </x> <y> 0 </y> <z> 1 </z> </direction>
+    </force>
+  </external_reactions>
+
+  <flight_control name="FCS">
+    <property value="0.0"> fcs/throttle-cmd-norm </property>
+    <channel name="Roll">
+      <aerosurface_scale name="aileron">
+        <input>fcs/aileron-cmd-norm</input>
+        <range> <min>-1</min> <max>1</max> </range>
+        <output>fcs/aileron-pos-norm</output>
+      </aerosurface_scale>
+    </channel>
+    <channel name="Pitch">
+      <aerosurface_scale name="elevator">
+        <input>fcs/elevator-cmd-norm</input>
+        <range> <min>-1</min> <max>1</max> </range>
+        <output>fcs/elevator-pos-norm</output>
+      </aerosurface_scale>
+    </channel>
+    <channel name="Yaw">
+      <aerosurface_scale name="rudder">
+        <input>fcs/rudder-cmd-norm</input>
+        <range> <min>-1</min> <max>1</max> </range>
+        <output>fcs/rudder-pos-norm</output>
+      </aerosurface_scale>
+    </channel>
+  </flight_control>
+
+  <aerodynamics>
+    <axis name="LIFT">
+      <function name="aero/force/Lift_alpha">
+        <description>AR 2.1 wing: flat slope ~3.2/rad, CLmax 1.00 at a late
+          20 deg, gentle break (low-AR tip vortices keep it flying),
+          inverted CLmin -0.75 - semi-symmetric sport section.</description>
+        <product>
+          <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
+          <table>
+            <independentVar lookup="row">aero/alpha-rad</independentVar>
+            <tableData>
+              -3.142   0.00
+              -1.571   0.00
+              -0.524  -0.60
+              -0.401  -0.75
+              -0.175  -0.40
+               0.000   0.15
+               0.175   0.71
+               0.349   1.00
+               0.524   0.80
+               1.571   0.00
+               3.142   0.00
+            </tableData>
+          </table>
+        </product>
+      </function>
+      <function name="aero/force/Lift_elevator">
+        <product>
+          <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
+          <property>fcs/elevator-pos-norm</property> <value> 0.25 </value>
+        </product>
+      </function>
+    </axis>
+    <axis name="DRAG">
+      <function name="aero/force/Drag_basic">
+        <product>
+          <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
+          <value> 0.050 </value>
+        </product>
+      </function>
+      <function name="aero/force/Drag_induced">
+        <description>AR 2.1: k ~0.165 - the low-AR energy bleed that makes
+          it fly like a jet (fast or sinking, nothing in between)</description>
+        <product>
+          <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
+          <property>aero/cl-squared</property> <value> 0.165 </value>
+        </product>
+      </function>
+      <function name="aero/force/Drag_alpha_poststall">
+        <product>
+          <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
+          <table>
+            <independentVar lookup="row">aero/alpha-rad</independentVar>
+            <tableData>
+              -3.142   0.00
+              -1.571   1.30
+              -1.047   1.00
+              -0.524   0.25
+              -0.349   0.00
+               0.349   0.00
+               0.524   0.25
+               1.047   1.00
+               1.571   1.30
+               3.142   0.00
+            </tableData>
+          </table>
+        </product>
+      </function>
+    </axis>
+    <axis name="SIDE">
+      <function name="aero/force/Side_beta">
+        <description>Deep boat hull: big side area, strong side force -
+          knife-edge capital, the "fuselage lift" a jet-like airframe
+          trades on</description>
+        <product>
+          <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
+          <property>aero/beta-rad</property> <value> -0.60 </value>
+        </product>
+      </function>
+    </axis>
+    <axis name="ROLL">
+      <function name="aero/moment/Roll_damp">
+        <product>
+          <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
+          <property>metrics/bw-ft</property> <property>aero/bi2vel</property>
+          <property>velocities/p-aero-rad_sec</property> <value> -0.28 </value>
+        </product>
+      </function>
+      <function name="aero/moment/Roll_aileron">
+        <product>
+          <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
+          <property>metrics/bw-ft</property> <property>fcs/aileron-pos-norm</property>
+          <value> 0.25 </value>
+        </product>
+      </function>
+      <!-- no propwash aileron term: the wing is entirely out of the
+           pusher's stream - at zero airspeed the ailerons are DEAD -->
+      <function name="aero/moment/Roll_dihedral">
+        <product>
+          <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
+          <property>metrics/bw-ft</property> <property>aero/beta-rad</property>
+          <value> -0.05 </value>
+        </product>
+      </function>
+    </axis>
+    <axis name="PITCH">
+      <function name="aero/moment/Pitch_zero">
+        <product>
+          <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
+          <property>metrics/cbarw-ft</property>
+          <value> 0.010 </value>
+        </product>
+      </function>
+      <function name="aero/moment/Pitch_alpha">
+        <product>
+          <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
+          <property>metrics/cbarw-ft</property> <property>aero/alpha-rad</property>
+          <value> -0.40 </value>
+        </product>
+      </function>
+      <function name="aero/moment/Pitch_damp">
+        <product>
+          <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
+          <property>metrics/cbarw-ft</property> <property>aero/ci2vel</property>
+          <property>velocities/q-aero-rad_sec</property> <value> -7.0 </value>
+        </product>
+      </function>
+      <function name="aero/moment/Pitch_elevator">
+        <product>
+          <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
+          <property>metrics/cbarw-ft</property> <property>fcs/elevator-pos-norm</property>
+          <value> -0.80 </value>
+        </product>
+      </function>
+      <function name="aero/moment/Pitch_elevator_propwash">
+        <description>The tail catches only the fringe of the high-mounted
+          pusher stream: a fraction of a tractor's authority - full
+          throttle at zero airspeed moves the nose a little, it does not
+          carry a hang.</description>
+        <product>
+          <property>fcs/throttle-cmd-norm</property>
+          <property>fcs/elevator-pos-norm</property>
+          <value> -1.5 </value>
+        </product>
+      </function>
+    </axis>
+    <axis name="YAW">
+      <function name="aero/moment/Yaw_beta">
+        <description>Hull side area ahead of the CG destabilizes, the fin
+          restores - net weathercock modest for the body length</description>
+        <product>
+          <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
+          <property>metrics/bw-ft</property> <property>aero/beta-rad</property>
+          <value> 0.06 </value>
+        </product>
+      </function>
+      <function name="aero/moment/Yaw_damp">
+        <product>
+          <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
+          <property>metrics/bw-ft</property> <property>aero/bi2vel</property>
+          <property>velocities/r-aero-rad_sec</property> <value> -0.15 </value>
+        </product>
+      </function>
+      <function name="aero/moment/Yaw_rudder">
+        <product>
+          <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
+          <property>metrics/bw-ft</property> <property>fcs/rudder-pos-norm</property>
+          <value> 0.10 </value>
+        </product>
+      </function>
+      <function name="aero/moment/Yaw_rudder_propwash">
+        <description>Fin fringe wash only (see Pitch_elevator_propwash)</description>
+        <product>
+          <property>fcs/throttle-cmd-norm</property>
+          <property>fcs/rudder-pos-norm</property>
+          <value> 1.2 </value>
+        </product>
+      </function>
+    </axis>
+  </aerodynamics>
+</fdm_config>
