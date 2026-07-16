@@ -116,9 +116,9 @@ def provision():
     msp.set_mode_range(4, PERM_KNIFERIGHT, CH_SELECT - 4, 1630, 1870)
     msp.set_mode_range(5, PERM_PROPHANG, CH_SELECT - 4, 1870, 2100)
     msp.set_mode_range(6, PERM_ALTFLOOR, CH_INVERTED - 4, 1700, 2100)
-    msp.set_mode_range(7, PERM_FIGROLL, CH_ANGLE - 4, 1600, 1750)
+    msp.set_mode_range(7, PERM_FIGROLL, CH_ANGLE - 4, 1450, 1600)
     msp.set_mode_range(8, PERM_FIGLOOP, CH_ANGLE - 4, 1150, 1300)
-    msp.set_mode_range(9, PERM_FIGSEQ, CH_ANGLE - 4, 1450, 1600)
+    msp.set_mode_range(9, PERM_FIGSEQ, CH_ANGLE - 4, 1600, 1750)
     # slot 10 MUST stay contiguous: the FC compacts the mode-range list at
     # the first gap on save, a gapped slot silently disappears after reboot
     msp.set_mode_range(10, PERM_FSPIN, CH_ANGLE - 4, 1300, 1450)

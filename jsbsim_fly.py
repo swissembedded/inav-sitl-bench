@@ -43,7 +43,7 @@ def rc_ch(thr=RC_LOW, arm=RC_LOW, angle=RC_LOW, floor=RC_LOW, sel=RC_LOW, ele=RC
     if FLOOR_ON and floor == RC_LOW:
         floor = 1900          # universal net: FLOOR switch on in every phase
     # angle = flight-mode selector (CH_ANGLE): FIGLOOP 1225 / FSPIN 1375 /
-    #         FIGSEQ 1525 / FIGROLL 1675 / ANGLE >=1750
+    #         FIGROLL 1525 / FIGSEQ 1675 / ANGLE >=1750
     # floor = FLOOR switch (CH_INVERTED), its own channel: >=1700 arms it
     # sel   = attitude-target selector (CH_SELECT): INVERT / KNIFE L/R / HANG
     return [ail, ele, thr, rud, arm, angle, floor, sel]
@@ -353,7 +353,7 @@ MAN_RC = {   # SEL detents: 1270 INVERT / 1510 KN L / 1750 KN R / 1985 HANG
     "knife_left":  dict(sel=1510),
     "knife_right": dict(sel=1750),
     "hang":        dict(sel=1985),
-    "roll_hold":   dict(angle=1675),                  # FIGROLL band on the mode selector
+    "roll_hold":   dict(angle=1525),                  # FIGROLL band on the mode selector
     "loop_fig":    dict(angle=1225),                  # FIGLOOP band on the mode selector
     "floor_dive":  dict(angle=RC_HIGH, floor=1900),   # ANGLE + FLOOR switch on
     "floor_panic": dict(angle=RC_HIGH, floor=1900),   # dive with the throttle CHOPPED
@@ -364,9 +364,9 @@ MAN_RC = {   # SEL detents: 1270 INVERT / 1510 KN L / 1750 KN R / 1985 HANG
     "inv_spin":    dict(sel=1270, angle=1375),        # FSPIN + INVERTED: inverted flat spin
     "knife_spin":  dict(sel=1510, angle=1375),        # FSPIN + KNIFE L: knife edge spin
     "hang_tvc":    dict(sel=1985),                    # prop hang on the TVC pusher delta
-    "seq":         dict(angle=1525),                  # FIGSEQ band: flies whatever
+    "seq":         dict(angle=1675),                  # FIGSEQ band: flies whatever
                                                       # sequence figure_script.py programmed
-    "seq_chain":   dict(angle=1525),                  # three routines back-to-back,
+    "seq_chain":   dict(angle=1675),                  # three routines back-to-back,
                                                       # reprogrammed via MSP between legs
 }[MAN]
 thrM = 1500 if MAN in ("hang", "hang_tvc") else 1650   # level trim; holds start stable (hang: hover PID owns)

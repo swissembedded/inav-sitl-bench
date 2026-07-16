@@ -228,22 +228,40 @@ dotR, = axIN.plot([1.4], [0], "o", ms=7, color="#1f77b4")
 
 # 3) pilot mode switches (lever position = channel value)
 axSw = panel(PY[2], "switches")
-# always armed - the ARM lever earned nothing, three switches carry
-# all the information
-axSw.set_xlim(-0.5, 3.6); axSw.set_ylim(-1.5, 1.5)
-axSw.set_xticks([0, 1, 2]); axSw.set_xticklabels(["MODE", "FLOOR", "SEL"], fontsize=7.5)
+# Switch panel: DETENT logic, one detent per provisioned band plus an
+# explicit OFF detent. The lever snaps to the label of the band the raw
+# channel value falls into - never between labels. Bands MUST match
+# bench.py provisioning.
+SW_BANDS = {
+    "st_angle": [("aus", 0), ("F LOOP", 1150), ("F-SPIN", 1300),
+                 ("F SEQ", 1450), ("F ROLL", 1600), ("ANGLE", 1750)],
+    "st_inv":   [("aus", 0), ("FLOOR", 1700)],
+    "st_sel":   [("aus", 0), ("INV", 1150), ("KN L", 1390),
+                 ("KN R", 1630), ("HANG", 1870)],
+}
+SW_COLS = ["st_angle", "st_inv", "st_sel"]
+
+def sw_detent(key, val):
+    bands = SW_BANDS[key]
+    idx = 0
+    for i, (_, lo) in enumerate(bands):
+        if val >= lo:
+            idx = i
+    return idx
+
+def sw_y(key, idx):
+    n = len(SW_BANDS[key])
+    return -1.0 + 2.0 * idx / (n - 1)
+
+axSw.set_xlim(-0.5, 3.4); axSw.set_ylim(-1.35, 1.35)
+axSw.set_xticks([0, 1, 2])
+axSw.set_xticklabels(["MODE", "FLOOR", "SEL"], fontsize=7.5)
 axSw.set_yticks([])
-for xx in range(3):
+for xx, key in enumerate(SW_COLS):
     axSw.plot([xx, xx], [-1, 1], color="0.8", lw=3, solid_capstyle="round")
-# complete band labels per channel, y = (band mid - 1500) / 500; MUST match
-# the bench.py provisioning: MODE selector = F LOOP 1225 / F-SPIN 1375 /
-# F SEQ 1525 / F ROLL 1675 / ANGLE >=1750; FLOOR alone on its own switch
-for yy, lbl in ((-0.55, "F LOOP"), (-0.25, "F-SPIN"), (0.05, "F SEQ"),
-                (0.35, "F ROLL"), (0.85, "ANGLE")):
-    axSw.text(0.18, yy, lbl, fontsize=6.0, va="center", color="0.35")
-axSw.text(1.18, 0.8, "FLOOR", fontsize=6.5, va="center", color="0.35")
-for yy, lbl in ((-0.46, "INV"), (0.02, "KN L"), (0.5, "KN R"), (0.97, "HANG")):
-    axSw.text(2.18, yy, lbl, fontsize=6.5, va="center", color="0.35")
+    for i, (lbl, _) in enumerate(SW_BANDS[key]):
+        axSw.text(xx + 0.14, sw_y(key, i), lbl, fontsize=6.0,
+                  va="center", color="0.35")
 levers, = axSw.plot([0, 1, 2], [-1, -1, -1], "s", ms=8, color="#d62728")
 
 # 4) controller OUT: FC commands (instant bars)
@@ -316,8 +334,7 @@ def frame(i):
     for b, val in zip(bars, _vals):
         b.set_width(val)
     levers.set_data([0, 1, 2],
-                    [max(-1, min(1, (sw[k][i] - 1500) / 500.0))
-                     for k in ("st_angle", "st_inv", "st_sel")])
+                    [sw_y(k, sw_detent(k, sw[k][i])) for k in SW_COLS])
     return seg_lines + [trail, txt, mtxt, marker, markerP, markerO, dotL, dotR, levers] + list(bars)
 
 anim = FuncAnimation(fig, frame, frames=len(rows), interval=60, blit=False)
