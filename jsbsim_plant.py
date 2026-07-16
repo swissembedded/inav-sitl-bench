@@ -41,6 +41,7 @@ class JSBSimPlant:
             self.fdm.set_aircraft_path(os.path.join(here, "jsbsim", "aircraft"))
             self.fdm.set_engine_path(os.path.join(here, "jsbsim", "engine"))
         self.fdm.load_model(model)
+        self._is_gyro = (model == "autog2")
         self.fdm.set_dt(dt)
         self.dt = dt
         f = self.fdm
@@ -76,6 +77,29 @@ class JSBSimPlant:
                            max(-1.0, min(1.0, rud)))
         self.fdm["fcs/throttle-cmd-norm"] = max(0.0, min(1.0, thr01))
 
+    # --- autogyro rotor state (autog2): lift couples as rpm_norm^2 in the
+    # FDM via the fcs/rotor-rpm-norm property. rpm lives on INFLOW =
+    # forward speed through the disk (one-way bearing: airflow only spins
+    # it UP, drag decays it). No pre-rotator model: rpm starts at
+    # rpm0_frac (Daniel). Numbers researched: 450 rpm flight, 0.7 start.
+    ROTOR_TAU_UP_S = 2.5      # spin-up time constant at nominal inflow
+    ROTOR_TAU_DOWN_S = 6.0    # decay when inflow dies
+    ROTOR_V_NOM_MS = 12.0     # inflow that sustains nominal rpm
+
+    def _rotor_step(self, span):
+        if not hasattr(self, "_rotor_norm"):
+            self._rotor_norm = 0.7            # rpm0_frac
+        f = self.fdm
+        v = f["velocities/vt-fps"] * 0.3048
+        alpha = f["aero/alpha-rad"]
+        import math as _m
+        inflow = max(0.0, v * _m.cos(alpha - 0.14))  # disk tilted ~8 deg back
+        target = min(1.3, inflow / self.ROTOR_V_NOM_MS)
+        tau = (self.ROTOR_TAU_UP_S if target > self._rotor_norm
+               else self.ROTOR_TAU_DOWN_S)
+        self._rotor_norm += (target - self._rotor_norm) * min(span / tau, 1.0)
+        f["fcs/rotor-rpm-norm"] = self._rotor_norm
+
     def set_flaps(self, f01):
         # flap TARGET 0..1; step() slews it like the other servos. Models
         # without flap aero (aerobat3d, funjet) just carry a dead property.
@@ -110,6 +134,8 @@ class JSBSimPlant:
         span = self.dt if dt is None else dt
         self._servo_step(span)
         self._tvc_step(span)
+        if getattr(self, "_is_gyro", False):
+            self._rotor_step(span)
         n = max(1, int(round(span / self.BASE_DT)))
         if abs(self.fdm.get_delta_t() - self.BASE_DT) > 1e-9:
             self.fdm.set_dt(self.BASE_DT)

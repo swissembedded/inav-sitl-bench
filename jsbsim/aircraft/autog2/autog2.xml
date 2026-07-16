@@ -1,0 +1,224 @@
+<?xml version="1.0"?>
+<!--
+  autog2: Durafly Auto-G2 V2 gyrocopter, 821 mm rotor, 600 g. The rotor
+  disk is the wing; every rotor force is multiplied by the SQUARE of
+  fcs/rotor-rpm-norm, which the plant integrates from inflow (researched:
+  ~450 rpm holds altitude, start at 0.7 = pre-rotator level; one-way
+  bearing means airflow only spins it up; altitude is flown with THRUST).
+  Actuators: lateral rotor tilt = roll, tail elevator = pitch (disk AoA
+  follows fuselage attitude), rudder. Roll authority scales with rpm^2 -
+  at low rpm the tilt goes soft: the tip-over mechanism (start and slow
+  flight), plus a constant LEFT pull from blade asymmetry (hold right).
+  GPL-3.0-or-later, see repo LICENSE. Handbook estimates.
+-->
+<fdm_config name="autog2" version="2.0" release="ALPHA">
+  <fileheader>
+    <author>Daniel Haensse</author>
+    <description>Durafly Auto-G2 V2 gyrocopter, rotor-rpm coupled disk</description>
+  </fileheader>
+  <metrics>
+    <wingarea unit="M2"> 0.53 </wingarea>
+    <wingspan unit="M"> 0.821 </wingspan>
+    <chord unit="M"> 0.645 </chord>
+    <htailarea unit="M2"> 0.02 </htailarea>
+    <htailarm unit="M"> 0.45 </htailarm>
+    <vtailarea unit="M2"> 0.02 </vtailarea>
+    <vtailarm unit="M"> 0.45 </vtailarm>
+    <location name="AERORP" unit="M"> <x> 0.0 </x> <y> 0 </y> <z> 0.15 </z> </location>
+    <location name="EYEPOINT" unit="M"> <x> 0 </x> <y> 0 </y> <z> 0.1 </z> </location>
+    <location name="VRP" unit="M"> <x> 0 </x> <y> 0 </y> <z> 0 </z> </location>
+  </metrics>
+  <mass_balance>
+    <ixx unit="KG*M2"> 0.010 </ixx>
+    <iyy unit="KG*M2"> 0.018 </iyy>
+    <izz unit="KG*M2"> 0.020 </izz>
+    <emptywt unit="KG"> 0.46 </emptywt>
+    <location name="CG" unit="M"> <x> 0 </x> <y> 0 </y> <z> 0 </z> </location>
+    <pointmass name="battery">
+      <weight unit="KG"> 0.14 </weight>
+      <location unit="M"> <x> 0.03 </x> <y> 0 </y> <z> -0.02 </z> </location>
+    </pointmass>
+  </mass_balance>
+  <ground_reactions>
+    <contact type="BOGEY" name="MAIN_L">
+      <location unit="M"> <x> 0.03 </x> <y> -0.11 </y> <z> -0.12 </z> </location>
+      <static_friction> 0.7 </static_friction> <dynamic_friction> 0.5 </dynamic_friction>
+      <spring_coeff unit="N/M"> 500 </spring_coeff> <damping_coeff unit="N/M/SEC"> 40 </damping_coeff>
+    </contact>
+    <contact type="BOGEY" name="MAIN_R">
+      <location unit="M"> <x> 0.03 </x> <y> 0.11 </y> <z> -0.12 </z> </location>
+      <static_friction> 0.7 </static_friction> <dynamic_friction> 0.5 </dynamic_friction>
+      <spring_coeff unit="N/M"> 500 </spring_coeff> <damping_coeff unit="N/M/SEC"> 40 </damping_coeff>
+    </contact>
+    <contact type="BOGEY" name="NOSE">
+      <location unit="M"> <x> 0.30 </x> <y> 0 </y> <z> -0.12 </z> </location>
+      <static_friction> 0.7 </static_friction> <dynamic_friction> 0.5 </dynamic_friction>
+      <spring_coeff unit="N/M"> 400 </spring_coeff> <damping_coeff unit="N/M/SEC"> 30 </damping_coeff>
+    </contact>
+  </ground_reactions>
+  <external_reactions>
+    <force name="motor" frame="BODY" unit="LBS">
+      <function>
+        <product>
+          <property> fcs/throttle-cmd-norm </property>
+          <value> 1.1 </value>
+        </product>
+      </function>
+      <location unit="M"> <x> 0.30 </x> <y> 0 </y> <z> 0.0 </z> </location>
+      <direction> <x> 1 </x> <y> 0 </y> <z> 0 </z> </direction>
+    </force>
+  </external_reactions>
+  <flight_control name="FCS">
+    <property value="0.0"> fcs/throttle-cmd-norm </property>
+    <property value="0.7"> fcs/rotor-rpm-norm </property>
+    <channel name="Roll">
+      <aerosurface_scale name="tilt">
+        <input>fcs/aileron-cmd-norm</input>
+        <range> <min>-1</min> <max>1</max> </range>
+        <output>fcs/aileron-pos-norm</output>
+      </aerosurface_scale>
+    </channel>
+    <channel name="Pitch">
+      <aerosurface_scale name="elevator">
+        <input>fcs/elevator-cmd-norm</input>
+        <range> <min>-1</min> <max>1</max> </range>
+        <output>fcs/elevator-pos-norm</output>
+      </aerosurface_scale>
+    </channel>
+    <channel name="Yaw">
+      <aerosurface_scale name="rudder">
+        <input>fcs/rudder-cmd-norm</input>
+        <range> <min>-1</min> <max>1</max> </range>
+        <output>fcs/rudder-pos-norm</output>
+      </aerosurface_scale>
+    </channel>
+  </flight_control>
+  <aerodynamics>
+    <axis name="LIFT">
+      <function name="aero/force/Lift_rotor">
+        <description>Disk lift, scaled by rotor rpm squared: at norm 1.0
+          the disk carries 600 g at 10-12 m/s; below 0.4 it stops
+          carrying (tip-over regime).</description>
+        <product>
+          <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
+          <property>fcs/rotor-rpm-norm</property>
+          <property>fcs/rotor-rpm-norm</property>
+          <table>
+            <independentVar lookup="row">aero/alpha-rad</independentVar>
+            <tableData>
+              -3.142   0.00
+              -0.349  -0.10
+               0.000   0.35
+               0.175   0.75
+               0.349   1.00
+               0.700   0.90
+               1.571   0.60
+               3.142   0.00
+            </tableData>
+          </table>
+        </product>
+      </function>
+    </axis>
+    <axis name="DRAG">
+      <function name="aero/force/Drag_body">
+        <product>
+          <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
+          <value> 0.06 </value>
+        </product>
+      </function>
+      <function name="aero/force/Drag_rotor">
+        <description>Autorotating disk drag, also rpm squared</description>
+        <product>
+          <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
+          <property>fcs/rotor-rpm-norm</property>
+          <property>fcs/rotor-rpm-norm</property>
+          <value> 0.22 </value>
+        </product>
+      </function>
+    </axis>
+    <axis name="SIDE">
+      <function name="aero/force/Side_beta">
+        <product>
+          <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
+          <property>aero/beta-rad</property> <value> -0.25 </value>
+        </product>
+      </function>
+    </axis>
+    <axis name="ROLL">
+      <function name="aero/moment/Roll_damp">
+        <product>
+          <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
+          <property>metrics/bw-ft</property> <property>aero/bi2vel</property>
+          <property>velocities/p-aero-rad_sec</property> <value> -0.30 </value>
+        </product>
+      </function>
+      <function name="aero/moment/Roll_tilt">
+        <description>Lateral rotor tilt, authority scales with rpm squared -
+          at low rpm the tilt goes soft (tip-over mechanism)</description>
+        <product>
+          <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
+          <property>metrics/bw-ft</property> <property>fcs/aileron-pos-norm</property>
+          <property>fcs/rotor-rpm-norm</property>
+          <property>fcs/rotor-rpm-norm</property>
+          <value> 0.20 </value>
+        </product>
+      </function>
+      <function name="aero/moment/Roll_asym">
+        <description>Advancing/retreating blade asymmetry: constant LEFT
+          pull with speed and rpm (researched takeoff breakout)</description>
+        <product>
+          <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
+          <property>metrics/bw-ft</property>
+          <property>fcs/rotor-rpm-norm</property>
+          <value> -0.02 </value>
+        </product>
+      </function>
+    </axis>
+    <axis name="PITCH">
+      <function name="aero/moment/Pitch_alpha">
+        <product>
+          <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
+          <property>metrics/cbarw-ft</property> <property>aero/alpha-rad</property>
+          <value> -0.30 </value>
+        </product>
+      </function>
+      <function name="aero/moment/Pitch_damp">
+        <product>
+          <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
+          <property>metrics/cbarw-ft</property> <property>aero/ci2vel</property>
+          <property>velocities/q-aero-rad_sec</property> <value> -6.0 </value>
+        </product>
+      </function>
+      <function name="aero/moment/Pitch_elevator">
+        <product>
+          <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
+          <property>metrics/cbarw-ft</property> <property>fcs/elevator-pos-norm</property>
+          <value> -0.50 </value>
+        </product>
+      </function>
+    </axis>
+    <axis name="YAW">
+      <function name="aero/moment/Yaw_beta">
+        <product>
+          <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
+          <property>metrics/bw-ft</property> <property>aero/beta-rad</property>
+          <value> 0.06 </value>
+        </product>
+      </function>
+      <function name="aero/moment/Yaw_damp">
+        <product>
+          <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
+          <property>metrics/bw-ft</property> <property>aero/bi2vel</property>
+          <property>velocities/r-aero-rad_sec</property> <value> -0.12 </value>
+        </product>
+      </function>
+      <function name="aero/moment/Yaw_rudder">
+        <product>
+          <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
+          <property>metrics/bw-ft</property> <property>fcs/rudder-pos-norm</property>
+          <value> 0.10 </value>
+        </product>
+      </function>
+    </axis>
+  </aerodynamics>
+</fdm_config>
