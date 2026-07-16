@@ -63,3 +63,18 @@ PANEL_BARS = {
     "GYRO":       ["throttle", "rudder", "elevator", "rotor tilt",
                    "pre-rotator"],
 }
+
+
+# Auto-G2 rotor model assumption (Daniel 2026-07-16): v1 starts WITHOUT a
+# pre-rotator model - the rotor simply begins with an initial rotation.
+# Coupling design: the FDM's disk lift is multiplied by the square of a
+# normalized rotor-rpm property (like fcs/flap-cmd-norm, written by the
+# plant each step); the plant integrates rpm from inflow (forward speed
+# through the tilted disk, one-way bearing: airflow only spins it UP).
+GYRO_ROTOR = dict(
+    disk_diameter_m=0.821,
+    rpm_nominal=1200.0,      # 821 mm class: tip speed ~52 m/s
+    rpm0_frac=0.7,           # pre-rotator reaches ~60-70% before the roll
+    rpm_min_frac=0.4,        # below this the disk stops carrying (tip-over
+                             # regime - the monitor case)
+)
