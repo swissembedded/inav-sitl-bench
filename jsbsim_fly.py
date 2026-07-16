@@ -40,6 +40,8 @@ THR_SCALE = (float(sys.argv[sys.argv.index("--thr-scale") + 1])
 # channels: A E T R ARM ANGLE INVERT SELECT  (bench provisioning layout)
 def rc_ch(thr=RC_LOW, arm=RC_LOW, angle=RC_LOW, floor=RC_LOW, sel=RC_LOW, ele=RC_MID, ail=RC_MID, rud=RC_MID):
     thr = int(round(1000 + (thr - 1000) * THR_SCALE))
+    if FLOOR_ON and floor == RC_LOW:
+        floor = 1900          # universal net: FLOOR switch on in every phase
     # angle = flight-mode selector (CH_ANGLE): FIGLOOP 1225 / FSPIN 1375 /
     #         FIGSEQ 1525 / FIGROLL 1675 / ANGLE >=1750
     # floor = FLOOR switch (CH_INVERTED), its own channel: >=1700 arms it
@@ -99,6 +101,7 @@ def _positional(argv):
             skip = False
             continue
         if a in ("--set", "--imu-offset", "--model", "--start-m", "--gust-dir", "--thr", "--thr-scale"):
+            # (--floor is a bare flag, no value to skip)
             skip = True
             continue
         if not a.startswith("--"):
@@ -131,6 +134,15 @@ _start_m = _START_M.get(_man, 104)
 for _i, _a in enumerate(sys.argv):
     if _a == "--start-m":
         _start_m = float(sys.argv[_i + 1])
+# --floor: the universal safety-net test. Arm LOW (25 m) like a real
+# takeoff, climb scripted to the maneuver's altitude - the floor arms on
+# the way up (floor 30 m + margin) - and keep the FLOOR switch ON through
+# every phase. Any maneuver that descends through the net must be caught;
+# the batch gate calls a miss below 20 m.
+FLOOR_ON = "--floor" in sys.argv
+_CLIMB_TARGET_M = _start_m
+if FLOOR_ON and not _man.startswith("floor"):
+    _start_m = 25.0
 # 1500 ft for the diagnostic c172 (entry transient); everything else per map
 plant = JSBSimPlant(model=_model,
                     alt_ft=1500 if _model == "c172p" else round(_start_m * _M2FT))
@@ -371,6 +383,14 @@ print("=== MANUAL (pilot flies by hand in ANGLE, sticks visibly move) ===")
 loop(3, "manual", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH, ail=1250))
 loop(3, "manual", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH, ail=1750))
 loop(3, "manual", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH))
+
+if FLOOR_ON and not MAN.startswith("floor") and plant.z < _CLIMB_TARGET_M - 5:
+    # scripted climb to the maneuver altitude; the floor arms on the way
+    print(f"=== CLIMB to {_CLIMB_TARGET_M:.0f} m (floor arms passing {30}+margin) ===")
+    _climb_t = 0
+    while plant.z < _CLIMB_TARGET_M - 3 and _climb_t < 90:
+        loop(1, "climb", rc_ch(thr=1900, arm=RC_HIGH, ele=1800, angle=RC_HIGH), print_every=1)
+        _climb_t += 1
 
 print(f"=== SEQUENCE {MAN} (handover manual -> controller) ===")
 if MAN == "floor_dive":

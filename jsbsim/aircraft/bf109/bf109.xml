@@ -1,141 +1,37 @@
-# Copyright (C) 2026 Daniel Haensse
-# GPL-3.0-or-later (see repo LICENSE)
-"""Parametric JSBSim airframe generator for the bench hangar. Emits the
-same idealized-thruster FDM structure as the hand-written aerobat3d /
-turbotimber / kingfisher / dragonfly, from a compact parameter dict -
-specs researched per airframe, aero derived from geometry class.
-
-    python airframe_gen.py            # (re)generate all
-"""
-import math
-import os
-
-HERE = os.path.dirname(os.path.abspath(__file__))
-
-# name: dict(desc, span, area, m_empty, m_batt, thrust_lbf, thr_xz,
-#            torque_lbf, cl0, clmax, a_max_deg, clmin, cd0, k_ind,
-#            cm0, cm_a, cm_ele, roll_ail, yaw_rud, pw_ele, pw_rud, pw_ail,
-#            dihedral, iyy_scale)
-AIRFRAMES = {
-    # Multiplex EasyGlider 4: 1.8 m Elapor motor glider, 41.6 dm2,
-    # ~1.1 kg RR, AR 7.8 - floaty, low power, big rudder authority.
-    "easyglider": dict(
-        desc="Multiplex EasyGlider 4, 1.8 m Elapor motor glider",
-        span=1.80, area=0.416, m_empty=0.88, m_batt=0.22,
-        thrust_lbf=2.2, thr_xz=(0.30, 0.0), torque_lbf=0.05,
-        cl0=0.40, clmax=1.30, a_max_deg=12, clmin=-0.55,
-        cd0=0.035, k_ind=0.052,
-        cm0=0.035, cm_a=-0.70, cm_ele=-0.55, roll_ail=0.14,
-        yaw_rud=0.16, pw_ele=-4.0, pw_rud=3.5, pw_ail=0.0,
-        dihedral=-0.12, iyy_scale=1.0),
-    # Multiplex EasyStar 3: 1.37 m pusher-pod trainer, 28 dm2, 0.70 kg,
-    # ailerons since v3; the pod sits above the wing -> mild nose-down
-    # throttle couple, prop stream misses the tail.
-    "easystar": dict(
-        desc="Multiplex EasyStar 3, 1.37 m pusher-pod trainer",
-        span=1.37, area=0.28, m_empty=0.56, m_batt=0.14,
-        thrust_lbf=1.0, thr_xz=(-0.05, 0.06), torque_lbf=0.03,
-        cl0=0.40, clmax=1.25, a_max_deg=13, clmin=-0.45,
-        cd0=0.045, k_ind=0.058,
-        cm0=0.035, cm_a=-0.65, cm_ele=-0.45, roll_ail=0.10,
-        yaw_rud=0.13, pw_ele=-0.8, pw_rud=0.8, pw_ail=0.0,
-        dihedral=-0.11, iyy_scale=1.0),
-    # Multiplex Xeno Uni: 1.245 m flying wing, 32 dm2, ~0.65 kg electric.
-    # ELEVONS ONLY - no rudder, no fin authority beyond the winglets:
-    # yaw_rud is ZERO, knife-edge is physically impossible here (the
-    # airframe case for capability-based mode gating). Short pitch arm.
-    "xeno": dict(
-        desc="Multiplex Xeno Uni, 1.245 m flying wing (elevons, no rudder)",
-        span=1.245, area=0.32, m_empty=0.51, m_batt=0.14,
-        thrust_lbf=1.3, thr_xz=(0.05, 0.03), torque_lbf=0.03,
-        cl0=0.15, clmax=1.05, a_max_deg=14, clmin=-0.70,
-        cd0=0.030, k_ind=0.085,
-        cm0=0.010, cm_a=-0.25, cm_ele=-0.28, roll_ail=0.20,
-        yaw_rud=0.0, pw_ele=-1.0, pw_rud=0.0, pw_ail=0.0,
-        dihedral=-0.03, iyy_scale=0.6),
-    # HobbyZone AeroScout S 2 1.1m: 1.095 m EPO pusher trainer, ~0.81 kg,
-    # 2306/2250Kv on 5x4.5 (3S) - pod above the wing, gentle.
-    "aeroscout": dict(
-        desc="HobbyZone AeroScout S 2, 1.1 m pusher trainer",
-        span=1.095, area=0.20, m_empty=0.64, m_batt=0.17,
-        thrust_lbf=1.7, thr_xz=(-0.05, 0.07), torque_lbf=0.04,
-        cl0=0.38, clmax=1.25, a_max_deg=13, clmin=-0.45,
-        cd0=0.050, k_ind=0.060,
-        cm0=0.035, cm_a=-0.60, cm_ele=-0.45, roll_ail=0.11,
-        yaw_rud=0.12, pw_ele=-0.8, pw_rud=0.8, pw_ail=0.0,
-        dihedral=-0.10, iyy_scale=1.0),
-    # E-flite A-10 Thunderbolt II Twin 64mm EDF: 1.149 m, 21.9 dm2,
-    # 2.32 kg (6S) - 106 g/dm2 loading, twin EDF on the fuselage: NO wash
-    # over any surface, thrust near the CG line, flies on airspeed alone.
-    "a10": dict(
-        desc="E-flite A-10 twin 64mm EDF, 1.15 m - EDF, zero propwash",
-        span=1.149, area=0.219, m_empty=1.92, m_batt=0.40,
-        thrust_lbf=5.4, thr_xz=(-0.05, 0.02), torque_lbf=0.0,
-        cl0=0.15, clmax=1.15, a_max_deg=14, clmin=-0.75,
-        cd0=0.040, k_ind=0.070,
-        cm0=0.010, cm_a=-0.50, cm_ele=-0.60, roll_ail=0.16,
-        yaw_rud=0.10, pw_ele=0.0, pw_rud=0.0, pw_ail=0.0,
-        dihedral=-0.02, iyy_scale=1.2),
-    # ParkZone Icon A5: 1.33 m amphibian, ~1.23 kg, 480/960Kv 9x8 pusher
-    # on the pylon - thrust well above the CG (nose-down couple), hull
-    # side area, the dragonfly's grown-up sibling.
-    "icona5": dict(
-        desc="ParkZone Icon A5, 1.33 m amphibian pylon pusher",
-        span=1.330, area=0.26, m_empty=1.01, m_batt=0.22,
-        thrust_lbf=2.1, thr_xz=(-0.05, 0.10), torque_lbf=0.05,
-        cl0=0.35, clmax=1.25, a_max_deg=13, clmin=-0.50,
-        cd0=0.048, k_ind=0.058,
-        cm0=0.030, cm_a=-0.55, cm_ele=-0.50, roll_ail=0.13,
-        yaw_rud=0.13, pw_ele=-0.8, pw_rud=0.8, pw_ail=0.0,
-        dihedral=-0.09, iyy_scale=1.0),
-    # ParkZone Bf 109G: 1.105 m warbird, ~1.0 kg on a narrow wing
-    # (~55 g/dm2) - fast, torque-heavy, sharper post-stall break than the
-    # trainers (warbird tip-stall temperament).
-    "bf109": dict(
-        desc="ParkZone Messerschmitt Bf 109G, 1.1 m warbird",
-        span=1.105, area=0.185, m_empty=0.84, m_batt=0.16,
-        thrust_lbf=2.4, thr_xz=(0.30, 0.0), torque_lbf=0.08,
-        cl0=0.25, clmax=1.20, a_max_deg=12, clmin=-0.60,
-        cd0=0.038, k_ind=0.062,
-        cm0=0.020, cm_a=-0.50, cm_ele=-0.55, roll_ail=0.15,
-        yaw_rud=0.12, pw_ele=-5.0, pw_rud=4.0, pw_ail=1.5,
-        dihedral=-0.05, iyy_scale=1.0),
-}
-
-TPL = """<?xml version="1.0"?>
+<?xml version="1.0"?>
 <!--
-  {name}: {desc}.
+  bf109: ParkZone Messerschmitt Bf 109G, 1.1 m warbird.
   GENERATED by airframe_gen.py (GPL-3.0-or-later, see repo LICENSE) -
   edit the parameter dict there, not this file. Same idealized-thruster
   structure as aerobat3d; coefficients are handbook estimates derived
-  from researched specs (span {span} m, S {area} m2, AUW ~{auw:.2f} kg,
-  static thrust ~{thrust_kg:.2f} kg => T/W ~{tw:.2f}).
+  from researched specs (span 1.105 m, S 0.185 m2, AUW ~1.00 kg,
+  static thrust ~1.09 kg => T/W ~1.09).
 -->
-<fdm_config name="{name}" version="2.0" release="ALPHA">
+<fdm_config name="bf109" version="2.0" release="ALPHA">
   <fileheader>
     <author>Daniel Haensse</author>
-    <description>{desc}</description>
+    <description>ParkZone Messerschmitt Bf 109G, 1.1 m warbird</description>
   </fileheader>
   <metrics>
-    <wingarea unit="M2"> {area} </wingarea>
-    <wingspan unit="M"> {span} </wingspan>
-    <chord unit="M"> {chord:.3f} </chord>
-    <htailarea unit="M2"> {htail:.3f} </htailarea>
-    <htailarm unit="M"> {arm:.2f} </htailarm>
-    <vtailarea unit="M2"> {vtail:.3f} </vtailarea>
-    <vtailarm unit="M"> {arm:.2f} </vtailarm>
+    <wingarea unit="M2"> 0.185 </wingarea>
+    <wingspan unit="M"> 1.105 </wingspan>
+    <chord unit="M"> 0.167 </chord>
+    <htailarea unit="M2"> 0.033 </htailarea>
+    <htailarm unit="M"> 0.30 </htailarm>
+    <vtailarea unit="M2"> 0.018 </vtailarea>
+    <vtailarm unit="M"> 0.30 </vtailarm>
     <location name="AERORP" unit="M"> <x> 0.0 </x> <y> 0 </y> <z> 0 </z> </location>
     <location name="EYEPOINT" unit="M"> <x> 0 </x> <y> 0 </y> <z> 0.1 </z> </location>
     <location name="VRP" unit="M"> <x> 0 </x> <y> 0 </y> <z> 0 </z> </location>
   </metrics>
   <mass_balance>
-    <ixx unit="KG*M2"> {ixx:.4f} </ixx>
-    <iyy unit="KG*M2"> {iyy:.4f} </iyy>
-    <izz unit="KG*M2"> {izz:.4f} </izz>
-    <emptywt unit="KG"> {m_empty} </emptywt>
+    <ixx unit="KG*M2"> 0.0183 </ixx>
+    <iyy unit="KG*M2"> 0.0305 </iyy>
+    <izz unit="KG*M2"> 0.0458 </izz>
+    <emptywt unit="KG"> 0.84 </emptywt>
     <location name="CG" unit="M"> <x> 0 </x> <y> 0 </y> <z> 0 </z> </location>
     <pointmass name="battery">
-      <weight unit="KG"> {m_batt} </weight>
+      <weight unit="KG"> 0.16 </weight>
       <location unit="M"> <x> 0.05 </x> <y> 0 </y> <z> 0 </z> </location>
     </pointmass>
   </mass_balance>
@@ -161,30 +57,30 @@ TPL = """<?xml version="1.0"?>
       <function>
         <product>
           <property> fcs/throttle-cmd-norm </property>
-          <value> {thrust_lbf} </value>
+          <value> 2.4 </value>
         </product>
       </function>
-      <location unit="M"> <x> {thr_x} </x> <y> 0 </y> <z> {thr_z} </z> </location>
+      <location unit="M"> <x> 0.3 </x> <y> 0 </y> <z> 0.0 </z> </location>
       <direction> <x> 1 </x> <y> 0 </y> <z> 0 </z> </direction>
     </force>
     <force name="prop-torque-r" frame="BODY" unit="LBS">
       <function>
         <product>
           <property> fcs/throttle-cmd-norm </property>
-          <value> {torque_lbf} </value>
+          <value> 0.08 </value>
         </product>
       </function>
-      <location unit="M"> <x> {thr_x} </x> <y> 0.4 </y> <z> {thr_z} </z> </location>
+      <location unit="M"> <x> 0.3 </x> <y> 0.4 </y> <z> 0.0 </z> </location>
       <direction> <x> 0 </x> <y> 0 </y> <z> -1 </z> </direction>
     </force>
     <force name="prop-torque-l" frame="BODY" unit="LBS">
       <function>
         <product>
           <property> fcs/throttle-cmd-norm </property>
-          <value> {torque_lbf} </value>
+          <value> 0.08 </value>
         </product>
       </function>
-      <location unit="M"> <x> {thr_x} </x> <y> -0.4 </y> <z> {thr_z} </z> </location>
+      <location unit="M"> <x> 0.3 </x> <y> -0.4 </y> <z> 0.0 </z> </location>
       <direction> <x> 0 </x> <y> 0 </y> <z> 1 </z> </direction>
     </force>
   </external_reactions>
@@ -222,14 +118,14 @@ TPL = """<?xml version="1.0"?>
             <tableData>
               -3.142   0.00
               -1.571   0.00
-              -0.524  {clmin_brk:.2f}
-              -0.349  {clmin:.2f}
-              -0.175  {clmin_half:.2f}
-               0.000  {cl0:.2f}
-               {a_half:.3f}  {cl_half:.2f}
-               {a_max:.3f}  {clmax:.2f}
-               0.436  {cl_post:.2f}
-               0.524  {cl_post2:.2f}
+              -0.524  -0.45
+              -0.349  -0.60
+              -0.175  -0.33
+               0.000  0.25
+               0.105  0.72
+               0.209  1.20
+               0.436  0.96
+               0.524  0.78
                1.571   0.00
                3.142   0.00
             </tableData>
@@ -247,13 +143,13 @@ TPL = """<?xml version="1.0"?>
       <function name="aero/force/Drag_basic">
         <product>
           <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
-          <value> {cd0} </value>
+          <value> 0.038 </value>
         </product>
       </function>
       <function name="aero/force/Drag_induced">
         <product>
           <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
-          <property>aero/cl-squared</property> <value> {k_ind} </value>
+          <property>aero/cl-squared</property> <value> 0.062 </value>
         </product>
       </function>
       <function name="aero/force/Drag_alpha_poststall">
@@ -297,14 +193,14 @@ TPL = """<?xml version="1.0"?>
         <product>
           <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
           <property>metrics/bw-ft</property> <property>fcs/aileron-pos-norm</property>
-          <value> {roll_ail} </value>
+          <value> 0.15 </value>
         </product>
       </function>
       <function name="aero/moment/Roll_dihedral">
         <product>
           <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
           <property>metrics/bw-ft</property> <property>aero/beta-rad</property>
-          <value> {dihedral} </value>
+          <value> -0.05 </value>
         </product>
       </function>
     </axis>
@@ -313,14 +209,14 @@ TPL = """<?xml version="1.0"?>
         <product>
           <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
           <property>metrics/cbarw-ft</property>
-          <value> {cm0} </value>
+          <value> 0.02 </value>
         </product>
       </function>
       <function name="aero/moment/Pitch_alpha">
         <product>
           <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
           <property>metrics/cbarw-ft</property> <property>aero/alpha-rad</property>
-          <value> {cm_a} </value>
+          <value> -0.5 </value>
         </product>
       </function>
       <function name="aero/moment/Pitch_damp">
@@ -334,14 +230,14 @@ TPL = """<?xml version="1.0"?>
         <product>
           <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
           <property>metrics/cbarw-ft</property> <property>fcs/elevator-pos-norm</property>
-          <value> {cm_ele} </value>
+          <value> -0.55 </value>
         </product>
       </function>
       <function name="aero/moment/Pitch_elevator_propwash">
         <product>
           <property>fcs/throttle-cmd-norm</property>
           <property>fcs/elevator-pos-norm</property>
-          <value> {pw_ele} </value>
+          <value> -5.0 </value>
         </product>
       </function>
     </axis>
@@ -364,56 +260,16 @@ TPL = """<?xml version="1.0"?>
         <product>
           <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
           <property>metrics/bw-ft</property> <property>fcs/rudder-pos-norm</property>
-          <value> {yaw_rud} </value>
+          <value> 0.12 </value>
         </product>
       </function>
       <function name="aero/moment/Yaw_rudder_propwash">
         <product>
           <property>fcs/throttle-cmd-norm</property>
           <property>fcs/rudder-pos-norm</property>
-          <value> {pw_rud} </value>
+          <value> 4.0 </value>
         </product>
       </function>
     </axis>
   </aerodynamics>
 </fdm_config>
-"""
-
-
-def gen(name, p):
-    span, area = p["span"], p["area"]
-    chord = area / span
-    auw = p["m_empty"] + p["m_batt"]
-    thrust_kg = p["thrust_lbf"] * 4.448 / 9.81
-    a_max = math.radians(p["a_max_deg"])
-    slope = (p["clmax"] - p["cl0"]) / a_max
-    vals = dict(
-        name=name, desc=p["desc"], span=span, area=area, chord=chord,
-        htail=0.18 * area, vtail=0.10 * area, arm=0.45 * span * 0.6,
-        m_empty=p["m_empty"], m_batt=p["m_batt"], auw=auw,
-        thrust_kg=thrust_kg, tw=thrust_kg / auw,
-        ixx=0.06 * auw * (span / 2) ** 2,
-        iyy=0.10 * auw * (span / 2) ** 2 * p["iyy_scale"],
-        izz=0.15 * auw * (span / 2) ** 2,
-        thrust_lbf=p["thrust_lbf"], thr_x=p["thr_xz"][0],
-        thr_z=p["thr_xz"][1], torque_lbf=p["torque_lbf"],
-        cl0=p["cl0"], clmax=p["clmax"], a_max=a_max,
-        a_half=a_max / 2, cl_half=p["cl0"] + slope * a_max / 2,
-        cl_post=0.80 * p["clmax"], cl_post2=0.65 * p["clmax"],
-        clmin=p["clmin"], clmin_half=0.55 * p["clmin"],
-        clmin_brk=0.75 * p["clmin"],
-        cd0=p["cd0"], k_ind=p["k_ind"], cm0=p["cm0"], cm_a=p["cm_a"],
-        cm_ele=p["cm_ele"], roll_ail=p["roll_ail"], yaw_rud=p["yaw_rud"],
-        pw_ele=p["pw_ele"], pw_rud=p["pw_rud"], dihedral=p["dihedral"])
-    d = os.path.join(HERE, "jsbsim", "aircraft", name)
-    os.makedirs(d, exist_ok=True)
-    with open(os.path.join(d, f"{name}.xml"), "w", newline="\n") as fh:
-        fh.write(TPL.format(**vals))
-    vs = math.sqrt(2 * auw * 9.81 / (1.225 * area * p["clmax"]))
-    print(f"{name:12s} AUW {auw:.2f} kg  T/W {thrust_kg / auw:.2f}  "
-          f"stall {vs:4.1f} m/s  AR {span * span / area:.1f}")
-
-
-if __name__ == "__main__":
-    for name, p in AIRFRAMES.items():
-        gen(name, p)

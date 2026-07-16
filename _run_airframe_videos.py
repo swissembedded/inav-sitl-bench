@@ -30,7 +30,7 @@ MODELS = {
     "kingfisher": None,
     "dragonfly": 1750,
     "easyglider": None, "easystar": None, "xeno": None,
-    "aeroscout": None, "a10": None, "icona5": None,
+    "aeroscout": None, "a10": None, "icona5": None, "bf109": None,
 }
 TITLE = {
     "inverted": "inverted hold through a gust and a rudder turn",
@@ -95,9 +95,11 @@ def verify(tag, man):
         return False, [f"crashed into terrain at t={t}s ({ph})"]
     if max(alts) > 122.0:
         fails.append(f"peak {max(alts):.0f} m > 122")
-    floor_limit = 15.0 if man.startswith("floor") else 5.0
+    # with the universal floor net armed, anything below 20 m means
+    # the floor DID NOT CATCH - that is the finding this test exists for
+    floor_limit = 15.0 if man.startswith("floor") else 20.0
     if min(alts) < floor_limit:
-        fails.append(f"floor {min(alts):.0f} m < {floor_limit:.0f}")
+        fails.append(f"floor missed: min {min(alts):.0f} m < {floor_limit:.0f}")
     # AHRS honesty: FC estimate vs plant truth (sustained-spin excursions
     # are a documented known limit -> relaxed bound there)
     div = max(_tilt_div(float(r["fc_roll"]), float(r["fc_pitch"]),
