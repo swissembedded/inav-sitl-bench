@@ -63,18 +63,21 @@ def verify_show(tag, repertoire):
                      if r["phase"] not in SPIN_EXEMPT), default=0.0)
     if peak_rest > 122.0:
         fails.append(f"peak {peak_rest:.0f} m > 122 (outside spin)")
-    if max(alts) > 140.0:
-        fails.append(f"peak {max(alts):.0f} m > 140 (spin sanity cap)")
+    # 148 = spin entry target 130 + the worst measured climb overshoot on
+    # a T/W-2 airframe (12 m) + margin; the cap exists to catch runaways
+    # (the 161 m finale zoom class), not approach overshoot
+    if max(alts) > 148.0:
+        fails.append(f"peak {max(alts):.0f} m > 148 (spin sanity cap)")
     if min(alts) < 15.0:
         fails.append(f"floor missed: min {min(alts):.0f} m < 15")
     # FLOOR-LINE honesty (needs the FW safety column, logs before it skip):
     # the show arms at 25 m true, the floor line sits at home + 30 m = 55 m
-    # true. Verify against the LINE, not a bare 15 m: (a) the floor must
-    # actually ARM during the initial climb (the pt17 class of silent
-    # never-armed flights), (b) whenever the aircraft sinks through the
-    # line, the recovery must be engaged within the 3 s lookahead's worth
-    # of travel, (c) REPORT how much figure time flew under recovery
-    # override - a figure flown by the floor is not that figure's proof.
+    # true. The FW engages on BREAKING THROUGH the line sinking (no
+    # prediction - Daniel: a piloted trajectory is not predictable), so:
+    # (a) the floor must actually ARM during the initial climb (the pt17
+    # class of silent never-armed flights), (b) below the line while
+    # sinking the recovery must be engaged, (c) figures fly above the
+    # line and must show essentially no recovery override.
     if rows and "safety" in rows[0]:
         FLOOR_LINE = 25.0 + 30.0
         armed_frames = sum(1 for r in rows if int(r["safety"]) & 1)
