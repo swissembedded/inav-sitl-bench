@@ -228,6 +228,16 @@ _step_clock = [0.0]   # wall-clock of the last plant step (see loop below)
 
 _frames = [0]      # injected frames = sim time in ms (lockstep time base)
 
+# Human throttle: the show formats script each phase with a FIXED stick
+# value, and the hard step at every phase boundary reads as the thrust
+# flicking back and forth in the replay (Daniel). A pilot moves the stick
+# over ~a second - slew the COMMANDED throttle at full-travel-per-second.
+# Only for the narrative formats; the special tests (crash gesture, floor
+# panic chop) rely on crisp steps.
+_THR_SLEW_US_PER_S = 1000.0
+_THR_SLEW_ON = _man in ("show", "gyro_tip")
+_thr_sent = [None]
+
 def loop(secs, phase, rc, thr_override=None, print_every=1.0, freeze=False, gps=None):
     """freeze=True: hold the plant motionless (clean static IC while the FC
     settles/calibrates/arms disarmed) -- sensors still stream."""
@@ -238,10 +248,20 @@ def loop(secs, phase, rc, thr_override=None, print_every=1.0, freeze=False, gps=
     # faster or slower than the wall clock
     while (_frames[0] - f0 < secs / DT) if LOCKSTEP else (time.time() - t0 < secs):
         it0 = time.perf_counter()
+        # NOTE: rc stays the CALLER'S target - the slewed value lives in
+        # _thr_sent and is applied on a copy (rebinding rc made the slew
+        # chase its own output and freeze the stick, measured)
+        rc_sent = rc
+        if _THR_SLEW_ON and not freeze:
+            if _thr_sent[0] is None:
+                _thr_sent[0] = float(rc[2])
+            _step = _THR_SLEW_US_PER_S * DT
+            _thr_sent[0] += max(-_step, min(_step, rc[2] - _thr_sent[0]))
+            rc_sent = rc[:2] + [int(round(_thr_sent[0]))] + rc[3:]
         # NOTE: no GPS injection for now. Injecting our GPS (even only while
         # upright) biases the AHRS pitch via the COG/vel fusion -- revisit
         # together with the lock-quality-gated altitude-source feature.
-        r = sim_step(m, plant.acc_mg(), plant.gyro_dps16(), rc, baro_pa=plant.baro_pa(), gps=gps)
+        r = sim_step(m, plant.acc_mg(), plant.gyro_dps16(), rc_sent, baro_pa=plant.baro_pa(), gps=gps)
         t_msp = time.perf_counter()
         ail = -r.stab_roll if FLIP_AIL else r.stab_roll
         ele = -r.stab_pitch if FLIP_ELE else r.stab_pitch
@@ -306,7 +326,7 @@ def loop(secs, phase, rc, thr_override=None, print_every=1.0, freeze=False, gps=
         log.write(f"{t:.2f},{phase},{mode},{fr:.1f},{fp:.1f},{fy:.0f},"
                   f"{jr:.1f},{jp:.1f},{jy:.1f},{plant.ias_kts():.0f},{plant.z:.1f},"
                   f"{ail:.2f},{ele:.2f},{rud:.2f},{thr:.2f},{fc_thr:.2f},"
-                  f"{rc[0]},{rc[1]},{rc[2]},{rc[3]},{rc[4]},{rc[5]},{rc[6]},{rc[7]},"
+                  f"{rc_sent[0]},{rc_sent[1]},{rc_sent[2]},{rc_sent[3]},{rc_sent[4]},{rc_sent[5]},{rc_sent[6]},{rc_sent[7]},"
                   f"{_alt_cache[0]:.1f},{tvcp:.2f},{tvcy:.2f},{plant.xy()[0]:.1f},{plant.xy()[1]:.1f},"
                   f"{_gps_cache[0]},{_gps_cache[1]},{getattr(plant, '_flap_pos', 0.0):.2f}\n")
         if time.time() - last > print_every:
