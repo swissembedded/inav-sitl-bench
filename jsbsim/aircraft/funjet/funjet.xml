@@ -184,6 +184,27 @@
           <value> 0.22 </value>
         </product>
       </function>
+      <function name="aero/moment/Roll_aileron_intake">
+        <description>EDF intake suction pulls air over the elevons: a small
+          throttle-proportional roll authority that survives zero airspeed
+          (video evidence on the real airframe: the elevons visibly respond
+          in the hang). Roughly 2% of cruise authority at hang throttle -
+          not aerobatic, but enough to stop an autorotation about the
+          vertical, which is all it needs to be (Daniel).</description>
+        <product>
+          <property>fcs/throttle-cmd-norm</property>
+          <property>fcs/aileron-pos-norm</property>
+          <value> 0.25 </value>
+        </product>
+      </function>
+      <function name="aero/moment/Roll_damp_intake">
+        <description>Same induced flow damps the rotation itself</description>
+        <product>
+          <property>fcs/throttle-cmd-norm</property>
+          <property>velocities/p-aero-rad_sec</property>
+          <value> -0.05 </value>
+        </product>
+      </function>
     </axis>
     <axis name="PITCH">
       <function name="aero/moment/Pitch_alpha">
