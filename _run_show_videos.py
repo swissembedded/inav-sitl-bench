@@ -58,6 +58,43 @@ def verify_show(tag, repertoire):
         fails.append(f"peak {max(alts):.0f} m > 122")
     if min(alts) < 15.0:
         fails.append(f"floor missed: min {min(alts):.0f} m < 15")
+    # FLOOR-LINE honesty (needs the FW safety column, logs before it skip):
+    # the show arms at 25 m true, the floor line sits at home + 30 m = 55 m
+    # true. Verify against the LINE, not a bare 15 m: (a) the floor must
+    # actually ARM during the initial climb (the pt17 class of silent
+    # never-armed flights), (b) whenever the aircraft sinks through the
+    # line, the recovery must be engaged within the 3 s lookahead's worth
+    # of travel, (c) REPORT how much figure time flew under recovery
+    # override - a figure flown by the floor is not that figure's proof.
+    if rows and "safety" in rows[0]:
+        FLOOR_LINE = 25.0 + 30.0
+        armed_frames = sum(1 for r in rows if int(r["safety"]) & 1)
+        if not armed_frames:
+            fails.append("floor never ARMED (safety word bit0)")
+        # breach = below the line while SINKING - the initial climb passes
+        # the line upward with the floor correctly quiet (first gate
+        # version forgot the sink condition and failed every climb-out)
+        breach = []
+        prev_alt = None
+        for r in rows:
+            a = float(r["alt"])
+            sinking = prev_alt is not None and a < prev_alt
+            prev_alt = a
+            if (a < FLOOR_LINE - 5 and sinking and r["phase"] not in
+                    ("settle", "cal", "armL", "armH", "level", "einflug")):
+                breach.append(r)
+        missed = sum(1 for r in breach if not int(r["safety"]) & 2)
+        if breach and missed > len(breach) * 0.2:
+            fails.append(f"below the floor line without recovery in "
+                         f"{missed}/{len(breach)} breach frames")
+        fig_frames = [r for r in rows if r["phase"] not in
+                      ("settle", "cal", "armL", "armH", "level", "einflug",
+                       "transit", "base", "bleed", "exit")]
+        overridden = sum(1 for r in fig_frames if int(r["safety"]) & 2)
+        if fig_frames and overridden > len(fig_frames) * 0.3:
+            fails.append(f"figures flown under floor override "
+                         f"{overridden}/{len(fig_frames)} frames - not the "
+                         f"figure's own proof")
     # AHRS honesty, scoped: 90 deg is tolerated ONLY inside the spin
     # phases (sustained-rotation estimator limit); everywhere else 15 -
     # a blanket 90 for spin-capable repertoires masked failures in the

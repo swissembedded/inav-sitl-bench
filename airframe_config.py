@@ -69,8 +69,10 @@ PANEL_BARS = {
     "ELEVON":     ["throttle", "elevon L", "elevon R"],
     "ELEVON_R":   ["throttle", "rudder", "elevon L", "elevon R"],
     "ELEVON_TVC": ["throttle", "elevon L", "elevon R", "tvc yaw", "tvc pitch"],
-    "GYRO":       ["throttle", "rudder", "elevator", "rotor tilt",
-                   "pre-rotator"],
+    # NO pre-rotator bar: the start motor is not modeled yet (brushed, no
+    # telemetry) - a dead always-zero instrument is dishonest display;
+    # the bar returns with the ground-takeoff work that models it
+    "GYRO":       ["throttle", "rudder", "elevator", "rotor tilt"],
 }
 
 

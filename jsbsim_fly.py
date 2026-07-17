@@ -72,8 +72,12 @@ def fc_mode(m, boxids):
               if (i >> 3) < len(bm) and (bm[i >> 3] >> (i & 7)) & 1}
     if 27 in active:                            # FAILSAFE overrides everything
         return "FAILSAFE"
-    base = next((PERM_NAME[p] for p in (69, 70, 71, 72, 74, 75, 76, 77, 79)
-                 if p in active), None)
+    # ALL active hold/figure boxes, combined: FLAT SPIN + an attitude
+    # selector is a combined state (inverted flat spin etc.) and the
+    # first-match display used to hide FLAT SPIN behind the attitude box
+    names = [PERM_NAME[p] for p in (69, 70, 71, 72, 74, 75, 76, 77, 79)
+             if p in active]
+    base = "+".join(names) if names else None
     if base is None:
         base = "ANGLE" if 1 in active else ("ACRO" if 0 in active else "DISARMED")
     if 73 in active:                            # altitude floor engaged as suffix
@@ -162,10 +166,14 @@ if "--imu-offset" in sys.argv:
 log = open(f"jsbsim_log_{_man}.csv", "w")
 log.write("t,phase,mode,fc_roll,fc_pitch,fc_yaw,js_roll,js_pitch,js_yaw,ias,alt,"
           "ail,ele,rud,thr,fc_thr,st_ail,st_ele,st_thr,st_rud,"
-          "st_arm,st_angle,st_inv,st_sel,fc_alt,tvc_p,tvc_y,x,y,gps_fix,gps_sat,flap\n")
+          "st_arm,st_angle,st_inv,st_sel,fc_alt,tvc_p,tvc_y,x,y,gps_fix,gps_sat,flap,"
+          "safety\n")
 BOXIDS = read_boxids(m)
 _mode_cache = ["DISARMED", 0.0]     # [last mode string, last poll wall-time]
 _alt_cache = [0.0]                  # last FC-measured altitude
+_safety_cache = [0]                 # FW safety word (debug slot 7): bit0
+                                    # floor armed, bit1 floor recovery,
+                                    # bit2 rotor guard recovery
 _gps_cache = [0, 0]                 # [fixType, numSat] from MSP_RAW_GPS
 _div_max = [0.0, 0.0, ""]           # [max FC-vs-truth tilt divergence, time, phase]
 
@@ -262,6 +270,8 @@ def loop(secs, phase, rc, thr_override=None, print_every=1.0, freeze=False, gps=
         # upright) biases the AHRS pitch via the COG/vel fusion -- revisit
         # together with the lock-quality-gated altitude-source feature.
         r = sim_step(m, plant.acc_mg(), plant.gyro_dps16(), rc_sent, baro_pa=plant.baro_pa(), gps=gps)
+        if r.debug[0] == 7:            # FW safety word cycles in slot 7
+            _safety_cache[0] = r.debug[1]
         t_msp = time.perf_counter()
         ail = -r.stab_roll if FLIP_AIL else r.stab_roll
         ele = -r.stab_pitch if FLIP_ELE else r.stab_pitch
@@ -328,7 +338,8 @@ def loop(secs, phase, rc, thr_override=None, print_every=1.0, freeze=False, gps=
                   f"{ail:.2f},{ele:.2f},{rud:.2f},{thr:.2f},{fc_thr:.2f},"
                   f"{rc_sent[0]},{rc_sent[1]},{rc_sent[2]},{rc_sent[3]},{rc_sent[4]},{rc_sent[5]},{rc_sent[6]},{rc_sent[7]},"
                   f"{_alt_cache[0]:.1f},{tvcp:.2f},{tvcy:.2f},{plant.xy()[0]:.1f},{plant.xy()[1]:.1f},"
-                  f"{_gps_cache[0]},{_gps_cache[1]},{getattr(plant, '_flap_pos', 0.0):.2f}\n")
+                  f"{_gps_cache[0]},{_gps_cache[1]},{getattr(plant, '_flap_pos', 0.0):.2f},"
+                  f"{_safety_cache[0]}\n")
         if time.time() - last > print_every:
             print(f"  [{phase:7}] FC {fr:+7.1f}/{fp:+6.1f}/{fy:3.0f} | JS {jr:+7.1f}/{jp:+6.1f}/{jy:5.1f} | "
                   f"IAS {plant.ias_kts():3.0f} alt {plant.z:5.0f} ele {ele:+.2f}")
