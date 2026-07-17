@@ -658,7 +658,15 @@ elif MAN == "show":
         # above it, and trim+250 caps the strongest climber's top under
         # the 122 ceiling (~40 m gain)
         _to_alt(78)
-        loop(6, "loop", rc_ch(thr=min(1900, thrL + 250), arm=RC_HIGH, angle=1225),
+        # the loop apex is entry + 2v/omega: at the 90 deg/s figure rate
+        # only entries below ~62 kts fit under the 122 ceiling from 78 m
+        # (a 74 kt jet peaked 127, measured) - decelerate first, the loop
+        # itself then needs only a modest energy margin
+        _t0d = _frames[0]
+        while plant.ias_kts() > 62 and (_frames[0] - _t0d) * DT < 12:
+            loop(0.5, "base", rc_ch(thr=1150, arm=RC_HIGH, angle=RC_HIGH),
+                 print_every=2)
+        loop(6, "loop", rc_ch(thr=min(1900, thrL + 150), arm=RC_HIGH, angle=1225),
              print_every=0.7)
         _exit()
 
