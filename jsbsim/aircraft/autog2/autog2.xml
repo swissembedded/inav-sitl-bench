@@ -173,6 +173,28 @@
           <value> -0.02 </value>
         </product>
       </function>
+      <function name="aero/moment/Roll_asym_stall">
+        <description>Retreating-blade stall: below ~70 percent flight rpm
+          the retreating side loses lift ABRUPTLY - a threshold rolling
+          moment that grows the deeper the rotor is starved, quickly
+          overpowering the (rpm^2-weak) lateral tilt. THE researched
+          tip-over driver at takeoff and in slow flight; a smooth
+          asymmetry term alone lets the model sink wings-level into the
+          ground instead of tipping (measured).</description>
+        <product>
+          <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
+          <property>metrics/bw-ft</property>
+          <table>
+            <independentVar lookup="row">fcs/rotor-rpm-norm</independentVar>
+            <tableData>
+              0.00  -0.90
+              0.40  -0.70
+              0.70   0.00
+              1.30   0.00
+            </tableData>
+          </table>
+        </product>
+      </function>
     </axis>
     <axis name="PITCH">
       <function name="aero/moment/Pitch_alpha">

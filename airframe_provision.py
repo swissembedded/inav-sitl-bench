@@ -80,6 +80,17 @@ def provision_model(model):
     msp = MspClient()
     n = provision_mixer(msp, actuators)
     msp.set_servo_mixer_rule(n, 0, 0, rate=0)   # terminate the rule list
+    if actuators == "GYRO":
+        # the gyro flies NO attitude presets and no figure bands - rebuild
+        # the mode map from scratch: ARM, ANGLE, FLOOR, ROTOR GUARD (perm
+        # 80, alone on the SELECT channel - the bench core would otherwise
+        # leave P-HANG overlapping at 1870+, measured as a phantom hang
+        # box in the tip test). Empty ranges clear the remaining slots;
+        # the FC compacts the list at the first gap on save.
+        msp.set_mode_range(2, 73, bench.CH_INVERTED - 4, 1700, 2100)  # FLOOR
+        msp.set_mode_range(3, 80, bench.CH_SELECT - 4, 1700, 2100)
+        for slot in range(4, 12):
+            msp.set_mode_range(slot, 0, 0, 900, 900)
     msp.save_eeprom()
     msp.close()
     time.sleep(3)

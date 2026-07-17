@@ -57,7 +57,7 @@ MSP_ACTIVEBOXES = 113
 MSP_ALTITUDE = 109
 PERM_NAME = {69: "INVERT", 70: "KNIFE L", 71: "KNIFE R", 72: "P-HANG",
              74: "F ROLL", 75: "F LOOP", 76: "F 4PT", 77: "F SEQ",
-             79: "FLAT SPIN"}
+             79: "FLAT SPIN", 80: "ROTOR GUARD"}
 
 def fc_alt_m(m):
     p = m.request(MSP_ALTITUDE)          # int32 estimated altitude [cm], ...
@@ -78,6 +78,8 @@ def fc_mode(m, boxids):
         base = "ANGLE" if 1 in active else ("ACRO" if 0 in active else "DISARMED")
     if 73 in active:                            # altitude floor engaged as suffix
         base += "+FLOOR"
+    if 80 in active:                            # rotor guard armed as suffix
+        base += "+GUARD"
     return base
 
 FLAG_ARMED = 1 << 2
@@ -130,6 +132,9 @@ _START_M = {
     "floor_dive": 25, "floor_panic": 25, "floor_spin": 25,   # arm low -> low net
     "seq": 120, "seq_chain": 120,   # aerobatic routines: exempt, they climb high
     "show": 25,   # one-video-per-airplane: arm low, Einflug, sequence
+    "gyro_tip": 80,   # autogyro tip-over pair: the T/W-0.83 gyro cannot climb
+                      # there itself - start high enough that TWO catch
+                      # cycles fit above the terrain
 }
 _start_m = _START_M.get(_man, 104)
 for _i, _a in enumerate(sys.argv):
@@ -383,6 +388,8 @@ MAN_RC = {   # SEL detents: 1270 INVERT / 1510 KN L / 1750 KN R / 1985 HANG
                                                       # reprogrammed via MSP between legs
     "show":        dict(angle=RC_HIGH),               # one video per airplane:
                                                       # capability-derived sequence
+    "gyro_tip":    dict(angle=RC_HIGH),               # autogyro tip-over pair:
+                                                      # --guard adds ROTOR GUARD
 }[MAN]
 thrM = 1500 if MAN in ("hang", "hang_tvc") else 1650   # level trim; holds start stable (hang: hover PID owns)
 # --thr <us>: maneuver-throttle override for airframes whose power differs
@@ -681,6 +688,37 @@ elif MAN == "show":
         print(f"=== SHOW {_model}: {_r} ===")
         _FIGS[_r]()
     _to_alt(40)
+elif MAN == "gyro_tip":
+    # THE TIP-OVER PAIR (floor_dive contrast pattern, Daniel's spec): slow
+    # flight starves the rotor - rpm decays with the inflow, the lateral
+    # tilt goes soft (authority ~ rpm^2), the blade-asymmetry left pull
+    # wins and the gyro rolls away with the stick at the stop. Sequence 1
+    # (default) flies WITHOUT protection: the honest failure, in it goes.
+    # Sequence 2 (--guard) has the ROTOR GUARD box on: the FW catches the
+    # excursion - wings level, nose down, throttle floor - because thrust
+    # is the only lever that restores inflow -> rpm -> authority.
+    GUARD = "--guard" in sys.argv
+    _sel = 1900 if GUARD else RC_LOW
+    with open(f"jsbsim_params_{_man}.txt", "a") as _pf:
+        _pf.write(f"model={_model}\n")
+    print(f"=== GYRO TIP ({'WITH' if GUARD else 'WITHOUT'} rotor guard) ===")
+    # healthy entry: enough throttle that the rotor sits ABOVE the stall
+    # band before the starving begins - the story arc needs a clean start
+    loop(6, "cruise", rc_ch(thr=1700, arm=RC_HIGH, angle=RC_HIGH, sel=_sel),
+         print_every=0.7)
+    # starve the rotor: near-idle, ANGLE holds level while the speed and
+    # with it the rotor rpm bleed away - the tip-over regime from the
+    # research (and the plant's measured rpm decay)
+    loop(14, "slow-decay", rc_ch(thr=1120, arm=RC_HIGH, angle=RC_HIGH, sel=_sel),
+         print_every=0.7)
+    loop(5, "tip-window", rc_ch(thr=1120, arm=RC_HIGH, angle=RC_HIGH, sel=_sel),
+         print_every=0.7)
+    # aftermath: without the guard this is wreckage by now; with it the
+    # guard has caught every excursion (twice from 80 m) and the pilot
+    # giving the throttle back gets a FLYING aircraft - 1700 is the
+    # cruise value that holds level, the story must end airborne
+    loop(10, "after", rc_ch(thr=1700, arm=RC_HIGH, angle=RC_HIGH, sel=_sel),
+         print_every=0.7)
 elif MAN == "inverted_stick":
     # ANGLE-semantics stick offsets: half aileron must carve a HELD angle
     # offset from the inverted reference (not a rate), releasing returns

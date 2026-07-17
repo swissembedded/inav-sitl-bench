@@ -226,6 +226,21 @@ for cx, lbl in ((-1.4, "thr/rud"), (1.4, "ail/ele")):
 dotL, = axIN.plot([-1.4], [0], "o", ms=7, color="#1f77b4")
 dotR, = axIN.plot([1.4], [0], "o", ms=7, color="#1f77b4")
 
+# model identity (from the params file): drives the actuator-true OUT
+# panel below AND the switch labels - read it before the panels are drawn
+MODEL = None
+if os.path.exists(f"jsbsim_params_{MAN}.txt"):
+    for _ln in open(f"jsbsim_params_{MAN}.txt"):
+        if _ln.startswith("model="):
+            MODEL = _ln.strip().split("=", 1)[1]
+_ACT = None
+if MODEL:
+    try:
+        from airframe_config import AIRFRAMES as _AF
+        _ACT = _AF[MODEL][0]
+    except Exception:
+        _ACT = None
+
 # 3) pilot mode switches (lever position = channel value)
 axSw = panel(PY[2], "switches")
 # DETENT logic, identical in EVERY video: one detent per provisioned band
@@ -238,6 +253,10 @@ SW_BANDS = {
     "st_sel":   [("OFF", 0), ("INVERT", 1150), ("KNIFE L", 1390),
                  ("KNIFE R", 1630), ("P-HANG", 1870)],
 }
+if _ACT == "GYRO":
+    # the gyro provisions ROTOR GUARD on the SELECT channel instead of
+    # the attitude presets - label the lever with what the FC really has
+    SW_BANDS["st_sel"] = [("OFF", 0), ("ROTOR GUARD", 1700)]
 SW_COLS = ["st_angle", "st_inv", "st_sel"]
 
 def sw_detent(key, val):
@@ -266,16 +285,11 @@ levers, = axSw.plot([0, 1, 2], [-1, -1, -1], "s", ms=8, color="#d62728")
 # in airframe_config, model name from the params file); the elevon bars
 # are the FC's own roll+pitch mix (the rate-50 smix rules). Logs without
 # a model line keep the legacy fixed panel.
-MODEL = None
-if os.path.exists(f"jsbsim_params_{MAN}.txt"):
-    for _ln in open(f"jsbsim_params_{MAN}.txt"):
-        if _ln.startswith("model="):
-            MODEL = _ln.strip().split("=", 1)[1]
 _out_labels = None
-if MODEL:
+if _ACT:
     try:
-        from airframe_config import AIRFRAMES as _AF, PANEL_BARS as _PB
-        _out_labels = list(_PB[_AF[MODEL][0]])
+        from airframe_config import PANEL_BARS as _PB
+        _out_labels = list(_PB[_ACT])
     except Exception:
         _out_labels = None
 if _out_labels is None:
