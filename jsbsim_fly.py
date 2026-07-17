@@ -652,8 +652,13 @@ elif MAN == "show":
         # ONE loop (fig_loop_rate 90 deg/s = 4 s) plus margin; throttle
         # relative to the trim - a T/W-2 airframe at full power hits
         # 100 kts in the downline and the exit zooms out of the ceiling
-        _to_alt(60)
-        loop(6, "loop", rc_ch(thr=min(1900, thrL + 400), arm=RC_HIGH, angle=1225),
+        # 78 m entry: a hot delta pulls the loop BOTTOM 19 m below the
+        # entry (measured on the lippisch, 70 -> 51) and genuinely breaks
+        # the 55 m floor line - entry 78 keeps the deepest measured bottom
+        # above it, and trim+250 caps the strongest climber's top under
+        # the 122 ceiling (~40 m gain)
+        _to_alt(78)
+        loop(6, "loop", rc_ch(thr=min(1900, thrL + 250), arm=RC_HIGH, angle=1225),
              print_every=0.7)
         _exit()
 
@@ -699,7 +704,7 @@ elif MAN == "show":
     def _fig_flaps_harrier():
         # slow flaps out (2 s servo travel), high alpha, reduced power -
         # the blown-flap harrier pass
-        _to_alt(65)
+        _to_alt(72)
         plant.set_flaps(1.0)
         loop(3, "flaps-out", rc_ch(thr=thrL, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
         loop(10, "harrier", rc_ch(thr=max(1100, thrL - 150), ele=1900, arm=RC_HIGH,
@@ -709,7 +714,7 @@ elif MAN == "show":
 
     def _fig_flaps_slow():
         # full flaps, reduced power: the slow pass (a10/binary class)
-        _to_alt(60)
+        _to_alt(70)
         plant.set_flaps(1.0)
         loop(8, "flaps-slow", rc_ch(thr=max(1100, thrL - 120), arm=RC_HIGH,
                                     angle=RC_HIGH), print_every=0.7)
@@ -732,9 +737,20 @@ elif MAN == "show":
     # lookahead), but the dive ahead of it is VISIBLE - from 75 the whole
     # finale played out in 11 m (measured), no demo at all
     _to_alt(110, label="transit-floor")
-    loop(10, "floor-dive", rc_ch(thr=1700, ele=1150, arm=RC_HIGH, angle=RC_HIGH),
-         print_every=0.7)
-    loop(6, "caught", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
+    # TRIM-RELATIVE throttles (fixed values were the timber lesson again:
+    # 1700 on a T/W-2 airframe is fast level flight, not a dive, and a
+    # 1650 climb-out rockets to 161 m): near-idle dive so EVERY airframe
+    # genuinely descends, trim throttle after the catch so the recovery
+    # levels off instead of zooming
+    # dive UNTIL the catch (FW safety word), not for a fixed time: a
+    # floaty glider sinks 4 m/s and needs 15+ s to reach the engage
+    # envelope, an overpowered trainer is there in 4 (measured both ways);
+    # the 25 s timeout leaves a missing catch for the gate to fail
+    _t0f = _frames[0]
+    while not (_safety_cache[0] & 2) and (_frames[0] - _t0f) * DT < 25:
+        loop(0.5, "floor-dive", rc_ch(thr=max(1100, thrL - 150), ele=1150,
+                                      arm=RC_HIGH, angle=RC_HIGH), print_every=2)
+    loop(6, "caught", rc_ch(thr=thrL, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
 elif MAN == "gyro_tip":
     # THE TIP-OVER PAIR (floor_dive contrast pattern, Daniel's spec): slow
     # flight starves the rotor - rpm decays with the inflow, the lateral
