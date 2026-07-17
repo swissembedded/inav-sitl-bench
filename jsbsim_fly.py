@@ -250,7 +250,9 @@ def loop(secs, phase, rc, thr_override=None, print_every=1.0, freeze=False, gps=
             _step_clock[0] = time.perf_counter()
         else:
             plant.set_controls(ail, ele, rud, thr)
-            if _man == "hang_tvc":
+            if _man == "hang_tvc" or _model == "funjet":
+                # TVC airframe: the vectored nozzle works in EVERY flight
+                # (show sequence included), not only the standalone demo
                 plant.set_tvc(tvcp, tvcy)
             if LOCKSTEP:
                 # the FC clock advances exactly DT per frame - fixed step,
@@ -560,8 +562,12 @@ elif MAN == "show":
         _t0 = _frames[0]
         while abs(plant.z - target) > 4 and (_frames[0] - _t0) * DT < tmax:
             if plant.z < target - 6:
-                loop(0.7, "transit", rc_ch(thr=1900, ele=1800, arm=RC_HIGH,
-                                           angle=RC_HIGH), print_every=2)
+                # climb throttle relative to the trim, not pegged: an
+                # overpowered EDF at full power accelerates so hard that
+                # the accelerometer bends the AHRS gravity estimate
+                # (measured: 17 deg pitch divergence on the lippisch)
+                loop(0.7, "transit", rc_ch(thr=min(1900, thrL + 450), ele=1800,
+                                           arm=RC_HIGH, angle=RC_HIGH), print_every=2)
             elif plant.z < target:
                 # fine approach from below: gentle, no overshoot
                 loop(0.7, "transit", rc_ch(thr=min(1900, thrL + 150), ele=1650,
@@ -589,7 +595,14 @@ elif MAN == "show":
         _to_alt(95)
         loop(8, "inverted", rc_ch(thr=thrL, arm=RC_HIGH, angle=RC_LOW, sel=1270),
              print_every=0.7)
-        _exit()
+        # bleed INSIDE the hold before releasing it: dropping the box at
+        # full trim speed makes a hot delta snap ~150 deg of roll at
+        # something like 3000 deg/s, and the attitude estimate disagrees by
+        # ~28 deg mid-snap (measured, funjet). Slow down first, release
+        # second - half the energy, a civilized roll-out, honest AHRS.
+        loop(3, "inv-bleed", rc_ch(thr=1100, arm=RC_HIGH, angle=RC_LOW, sel=1270),
+             print_every=0.7)
+        loop(3, "exit", rc_ch(thr=thrL, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
 
     def _fig_roll():
         _to_alt(95)
@@ -625,8 +638,11 @@ elif MAN == "show":
         loop(3, "spin-hold", rc_ch(thr=thrL, arm=RC_HIGH, angle=1375), print_every=0.7)
         loop(5, "spin-rud", rc_ch(thr=1000, rud=2000, arm=RC_HIGH, angle=1375),
              print_every=0.7)
+        # NO bleed after a spin: it ends SLOW by design - there is no excess
+        # speed to dissipate, an idle nose-down bleed only eats the altitude
+        # margin the recovery just saved (measured: bf109 down to 12.9 m)
         loop(4, "rud-release", rc_ch(thr=thrL, arm=RC_HIGH, angle=1375), print_every=0.7)
-        _exit()
+        loop(3, "exit", rc_ch(thr=thrL, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
 
     def _fig_hang():
         # the pull converts the base-line speed to height (v^2/2g plus the

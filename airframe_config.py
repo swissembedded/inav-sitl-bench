@@ -36,7 +36,10 @@ AIRFRAMES = {
     "a10":       ("QHS_FLAPS",  ["inverted", "roll", "loop", "knife_fast",
                                  "flaps_slow"]),
     "icona5":    ("QHS",        ["roll", "loop"]),
-    "bf109":     ("QHS",        ["inverted", "roll", "loop", "knife_fast", "spin"]),
+    # NO spin: the narrow warbird wing with its sharp post-stall break
+    # cannot HOLD a flat spin - it tumbles and eats 90 m in 5 s (measured,
+    # consistent with the old batch where bf109 flat_spin crashed too)
+    "bf109":     ("QHS",        ["inverted", "roll", "loop", "knife_fast"]),
     "lippisch":  ("ELEVON",     ["inverted", "roll", "loop"]),
     "mig15":     ("QH",         ["inverted", "roll", "loop"]),
     "pt17":      ("QHS",        ["roll", "loop", "spin"]),
