@@ -54,8 +54,17 @@ def verify_show(tag, repertoire):
     if crash is not None:
         return False, [f"crashed into terrain at t={rows[crash]['t']}s "
                        f"({rows[crash]['phase']})"]
-    if max(alts) > 122.0:
-        fails.append(f"peak {max(alts):.0f} m > 122")
+    # ceiling: 122 m everywhere EXCEPT the spin block - the spin needs its
+    # 60-75 m ABOVE the floor line to be its own proof (Daniel: go higher
+    # if it needs the height), so its entry lives at 130 with a 140 sanity
+    # cap; "transit" climbs toward it are exempted with the same cap
+    SPIN_EXEMPT = SPIN_PHASES | {"transit-spin", "base-spin"}
+    peak_rest = max((float(r["alt"]) for r in rows
+                     if r["phase"] not in SPIN_EXEMPT), default=0.0)
+    if peak_rest > 122.0:
+        fails.append(f"peak {peak_rest:.0f} m > 122 (outside spin)")
+    if max(alts) > 140.0:
+        fails.append(f"peak {max(alts):.0f} m > 140 (spin sanity cap)")
     if min(alts) < 15.0:
         fails.append(f"floor missed: min {min(alts):.0f} m < 15")
     # FLOOR-LINE honesty (needs the FW safety column, logs before it skip):
@@ -87,14 +96,29 @@ def verify_show(tag, repertoire):
         if breach and missed > len(breach) * 0.2:
             fails.append(f"below the floor line without recovery in "
                          f"{missed}/{len(breach)} breach frames")
+        # figures must be THEIR OWN proof: essentially no floor override
+        # inside figure frames (the finale is the floor's stage instead)
+        # rud-release is the spin's RECOVERY tail: the predictive floor
+        # correctly primes there while the sink is arrested (measured:
+        # 0 override in spin-hold/spin-rud, all of it in rud-release) -
+        # the held figure is judged, not its recovery
         fig_frames = [r for r in rows if r["phase"] not in
                       ("settle", "cal", "armL", "armH", "level", "einflug",
-                       "transit", "base", "bleed", "exit")]
+                       "transit", "transit-spin", "transit-floor", "base",
+                       "base-spin", "base-floor", "bleed", "exit",
+                       "rud-release", "floor-dive", "caught")]
         overridden = sum(1 for r in fig_frames if int(r["safety"]) & 2)
-        if fig_frames and overridden > len(fig_frames) * 0.3:
+        if fig_frames and overridden > len(fig_frames) * 0.05:
             fails.append(f"figures flown under floor override "
                          f"{overridden}/{len(fig_frames)} frames - not the "
                          f"figure's own proof")
+        # THE FINALE: the held dive must be CAUGHT - recovery engaged during
+        # floor-dive/caught, and the flight ends flying (end-level is
+        # checked globally below)
+        finale = [r for r in rows if r["phase"] in ("floor-dive", "caught")]
+        if finale:
+            if not any(int(r["safety"]) & 2 for r in finale):
+                fails.append("finale: floor never caught the held dive")
     # AHRS honesty, scoped: 90 deg is tolerated ONLY inside the spin
     # phases (sustained-rotation estimator limit); everywhere else 15 -
     # a blanket 90 for spin-capable repertoires masked failures in the

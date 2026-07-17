@@ -590,7 +590,7 @@ elif MAN == "show":
     with open(f"jsbsim_params_{_man}.txt", "a") as _pf:
         _pf.write(f"model={_model}\nthr_level={thrL}\n")
 
-    def _to_alt(target, tmax=60):
+    def _to_alt(target, tmax=60, label="transit"):
         # transit to the figure's entry altitude BY ALTITUDE, not by time
         # (a slow climber gets as long as it needs - the PT-17 lesson),
         # then a horizontal base line at the trimmed throttle. The descent
@@ -604,19 +604,19 @@ elif MAN == "show":
                 # overpowered EDF at full power accelerates so hard that
                 # the accelerometer bends the AHRS gravity estimate
                 # (measured: 17 deg pitch divergence on the lippisch)
-                loop(0.7, "transit", rc_ch(thr=min(1900, thrL + 450), ele=1800,
+                loop(0.7, label, rc_ch(thr=min(1900, thrL + 450), ele=1800,
                                            arm=RC_HIGH, angle=RC_HIGH), print_every=2)
             elif plant.z < target:
                 # fine approach from below: gentle, no overshoot
-                loop(0.7, "transit", rc_ch(thr=min(1900, thrL + 150), ele=1650,
+                loop(0.7, label, rc_ch(thr=min(1900, thrL + 150), ele=1650,
                                            arm=RC_HIGH, angle=RC_HIGH), print_every=2)
             elif plant.ias_kts() < 22:
-                loop(0.7, "transit", rc_ch(thr=min(1900, thrL + 200), arm=RC_HIGH,
+                loop(0.7, label, rc_ch(thr=min(1900, thrL + 200), arm=RC_HIGH,
                                            angle=RC_HIGH), print_every=2)
             else:
-                loop(0.7, "transit", rc_ch(thr=max(1100, thrL - 200), ele=1300,
+                loop(0.7, label, rc_ch(thr=max(1100, thrL - 200), ele=1300,
                                            arm=RC_HIGH, angle=RC_HIGH), print_every=2)
-        loop(3, "base", rc_ch(thr=thrL, arm=RC_HIGH, angle=RC_HIGH), print_every=2)
+        loop(3, label.replace("transit", "base"), rc_ch(thr=thrL, arm=RC_HIGH, angle=RC_HIGH), print_every=2)
 
     def _exit():
         # energy-aware exit: a fast figure ends with excess speed, and at
@@ -672,7 +672,12 @@ elif MAN == "show":
         _exit()
 
     def _fig_spin():
-        _to_alt(100)
+        # the spin eats 60-75 m and must COMPLETE above the floor line
+        # (55 m true) so the figure is its own proof, not floor-assisted
+        # (measured: entry 100 flew 52 percent of the spin under floor
+        # override). Daniel: go higher if it needs the height - the spin
+        # segment may exceed the 122 m video ceiling, the gate scopes it.
+        _to_alt(130, label="transit-spin")
         loop(3, "spin-hold", rc_ch(thr=thrL, arm=RC_HIGH, angle=1375), print_every=0.7)
         loop(5, "spin-rud", rc_ch(thr=1000, rud=2000, arm=RC_HIGH, angle=1375),
              print_every=0.7)
@@ -718,7 +723,18 @@ elif MAN == "show":
     for _r in _rep:
         print(f"=== SHOW {_model}: {_r} ===")
         _FIGS[_r]()
-    _to_alt(40)
+    # THE FINALE (Daniel): one explicit floor test closes every show -
+    # dive into the net with the elevator HELD, the floor must catch and
+    # climb out against the stick. The figures above never needed to skim
+    # the line; this single catch is the floor's proof.
+    print(f"=== SHOW {_model}: floor test ===")
+    # from 110: the predictive catch fires around 85 true regardless (3 s
+    # lookahead), but the dive ahead of it is VISIBLE - from 75 the whole
+    # finale played out in 11 m (measured), no demo at all
+    _to_alt(110, label="transit-floor")
+    loop(10, "floor-dive", rc_ch(thr=1700, ele=1150, arm=RC_HIGH, angle=RC_HIGH),
+         print_every=0.7)
+    loop(6, "caught", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
 elif MAN == "gyro_tip":
     # THE TIP-OVER PAIR (floor_dive contrast pattern, Daniel's spec): slow
     # flight starves the rotor - rpm decays with the inflow, the lateral
