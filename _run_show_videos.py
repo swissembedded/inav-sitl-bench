@@ -122,11 +122,17 @@ def verify_show(tag, repertoire):
         if finale:
             if not any(int(r["safety"]) & 2 for r in finale):
                 fails.append("finale: floor never caught the held dive")
-    # AHRS honesty, scoped: 90 deg is tolerated ONLY inside the spin
-    # phases (sustained-rotation estimator limit); everywhere else 15 -
-    # a blanket 90 for spin-capable repertoires masked failures in the
-    # other figures
+    # AHRS honesty: 15 deg everywhere, 20 in the spin phases - the
+    # "sustained-rotation known limit" that justified a 90 deg allowance
+    # dissolved under measurement: the estimator tracks flat/inverted
+    # spins at 2-6 deg (acc weight correctly drops to zero at spin
+    # rates), and the historical 50+ deg outliers were the PLANT
+    # teleporting (FDM discontinuity), not the AHRS. Plant teleports are
+    # flagged as their own failure: a truth-attitude step no aircraft
+    # can fly invalidates the flight physically.
     div_spin, div_rest = 0.0, 0.0
+    prev_up = None
+    teleport = None
     for r in rows:
         d = _tilt_div(float(r["fc_roll"]), float(r["fc_pitch"]),
                       float(r["js_roll"]), float(r["js_pitch"]))
@@ -134,10 +140,18 @@ def verify_show(tag, repertoire):
             div_spin = max(div_spin, d)
         else:
             div_rest = max(div_rest, d)
+        step = _tilt_div(float(r["js_roll"]), float(r["js_pitch"]),
+                         *prev_up) if prev_up else 0.0
+        if step > 30.0 and teleport is None:
+            teleport = f"t={r['t']} ({r['phase']})"
+        prev_up = (float(r["js_roll"]), float(r["js_pitch"]))
+    if teleport:
+        fails.append(f"plant discontinuity (FDM artifact) at {teleport} - "
+                     f"truth attitude stepped >30 deg between frames")
     if div_rest > 15.0:
         fails.append(f"AHRS divergence {div_rest:.0f} deg > 15 (outside spin)")
-    if div_spin > 90.0:
-        fails.append(f"AHRS divergence {div_spin:.0f} deg > 90 (in spin)")
+    if div_spin > 20.0:
+        fails.append(f"AHRS divergence {div_spin:.0f} deg > 20 (in spin)")
     for fig in repertoire:
         for want in FIG_MODE.get(fig, []):
             if not any(want in r["mode"] for r in rows):
