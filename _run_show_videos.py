@@ -59,8 +59,32 @@ def verify_show(tag, repertoire):
     # if it needs the height), so its entry lives at 130 with a 140 sanity
     # cap; "transit" climbs toward it are exempted with the same cap
     SPIN_EXEMPT = SPIN_PHASES | {"transit-spin", "base-spin"}
+    # the descent corridor OUT of a spin is part of the spin's altitude:
+    # a legal spin lives above the ceiling (exempt to 148), so the frames
+    # after its last spin frame necessarily cross the 122 line on the way
+    # down. Exempt exactly that stretch - from spin end WHILE still above
+    # 122 (hard cap 20 s) - and demand it DESCENDS net, so a runaway
+    # cannot hide in it. A spin that ends below the ceiling produces no
+    # corridor (the easyglider legitimately climbs to its next figure).
+    last_spin_t = max((float(r["t"]) for r in rows
+                      if r["phase"] in SPIN_EXEMPT), default=-1e9)
+    corridor_ids = set()
+    corridor = []
+    for r in rows:
+        dt = float(r["t"]) - last_spin_t
+        if r["phase"] in SPIN_EXEMPT or dt < 0.0 or dt > 20.0:
+            continue
+        if float(r["alt"]) <= 122.0:
+            break
+        corridor.append(r)
+        corridor_ids.add(id(r))
+    if corridor and float(corridor[-1]["alt"]) >= float(corridor[0]["alt"]):
+        fails.append("post-spin corridor climbs instead of descending "
+                     f"({float(corridor[0]['alt']):.0f} -> "
+                     f"{float(corridor[-1]['alt']):.0f} m)")
     peak_rest = max((float(r["alt"]) for r in rows
-                     if r["phase"] not in SPIN_EXEMPT), default=0.0)
+                     if r["phase"] not in SPIN_EXEMPT
+                     and id(r) not in corridor_ids), default=0.0)
     if peak_rest > 122.0:
         fails.append(f"peak {peak_rest:.0f} m > 122 (outside spin)")
     # 148 = spin entry target 130 + the worst measured climb overshoot on
