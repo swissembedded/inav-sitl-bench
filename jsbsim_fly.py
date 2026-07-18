@@ -1039,11 +1039,13 @@ elif MAN == "show":
     loop(1, "takeover", rc_ch(thr=thrL, ail=1700, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
     # BELOW trim: released at the orbit's energy, a hot airframe at thrL
     # zooms out of the 122 ceiling (a10: 134 m, vampire: 122.1 measured).
-    # From a HIGH-riding orbit the close also descends back toward the
-    # arena (gentle down-elevator; a10 still climbed 113 -> 126 level) -
-    # from the floor band it just flies level, unchanged.
+    # From a HIGH-riding orbit the close comes back DOWN into the arena
+    # power-off (the a10's excess thrust still climbed +1.4 m/s at
+    # trim-120 with -9 deg commanded; a chopped stick stops the motor and
+    # the glide descends for certain) - from the floor band it just flies
+    # level, unchanged.
     if plant.z > 100:
-        loop(5, "level-out", rc_ch(thr=max(1000, thrL - 120), ele=1350,
+        loop(5, "level-out", rc_ch(thr=1000, ele=1250,
                                    arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
     else:
         loop(5, "level-out", rc_ch(thr=max(1000, thrL - 120), arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
