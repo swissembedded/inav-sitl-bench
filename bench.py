@@ -104,6 +104,13 @@ def provision():
     # default OFF upstream): without this bit none of the OHOLD boxes
     # exist and every figure flight would silently fly bare ANGLE
     msp.enable_feature(1 << 5)                                # FEATURE_FW_AEROBATICS
+    # loiter radius must match the airframe's speed or the FW position
+    # controller hunts a physically unflyable circle (measured: at 45-50 kt
+    # the physical radius at full 35 deg bank is 77-98 m - exactly at the
+    # 75 m default, the controller saturates alternately, +-35 deg square
+    # wave. R = v^2 / (g * tan(bank)): 25 m/s at a comfortable 25 deg
+    # -> ~150 m).
+    msp.set_setting("nav_fw_loiter_radius", struct.pack("<H", 15000))
     # provider MSP is driver-based: gpsInit() keeps the feature alive without
     # a serial port (any other provider clears FEATURE_GPS at boot on SITL)
     msp.set_setting("gps_provider", struct.pack("<B", 1))

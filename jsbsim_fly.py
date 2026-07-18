@@ -142,6 +142,8 @@ _START_M = {
     "floor_dive": 25, "floor_panic": 25, "floor_spin": 25,   # arm low -> low net
     "seq": 120, "seq_chain": 120,   # aerobatic routines: exempt, they climb high
     "fig_abort": 110,   # abort-proof: spin impulse up high, dive to the net after
+    "circle_probe": 104,   # AHRS circle probe: steady turn, measure yaw truth
+    "poshold_probe": 104,  # vanilla NAV POSHOLD control experiment
     "show": 25,   # one-video-per-airplane: arm low, Einflug, sequence
     "gyro_tip": 80,   # autogyro tip-over pair: the T/W-0.83 gyro cannot climb
                       # there itself - start high enough that TWO catch
@@ -191,6 +193,7 @@ _gps_lock = [True, -10.0]   # [locked, time the outage condition began/ended]
 # internal (coasted) solution in wire units + the shade/unshade clocks
 _gps_fv = {"shaded_since": None, "unshaded_since": None, "coast": None}
 _gps_origin = [None, None]   # first-frame lat_e7/lon_e7 for meter logging
+_orb_cache = [0, 0]          # FC-side orbit view: [heading err x10, dist m]
 _CLIMB_TARGET_M = _start_m
 if FLOOR_ON and not _man.startswith("floor"):
     _start_m = 25.0
@@ -209,7 +212,7 @@ log.write("t,phase,mode,fc_roll,fc_pitch,fc_yaw,js_roll,js_pitch,js_yaw,ias,alt,
           "ail,ele,rud,thr,fc_thr,st_ail,st_ele,st_thr,st_rud,"
           "st_arm,st_angle,st_inv,st_sel,fc_alt,tvc_p,tvc_y,x,y,gps_fix,gps_sat,flap,"
           "safety,accw,inj_baro_pa,inj_gps_alt,"
-          "inj_gps_x,inj_gps_y,inj_gps_vn,inj_gps_ve\n")
+          "inj_gps_x,inj_gps_y,inj_gps_vn,inj_gps_ve,orb_err,orb_dist\n")
 BOXIDS = read_boxids(m)
 _mode_cache = ["DISARMED", 0.0]     # [last mode string, last poll wall-time]
 _alt_cache = [0.0]                  # last FC-measured altitude
@@ -412,6 +415,10 @@ def loop(secs, phase, rc, thr_override=None, print_every=1.0, freeze=False, gps=
             _safety_cache[0] = r.debug[1]
         elif r.debug[0] == 6:          # FW effective acc weight
             _accw_cache[0] = r.debug[1]
+        elif r.debug[0] == 4:          # floor orbit: FC-side heading error x10
+            _orb_cache[0] = r.debug[1]
+        elif r.debug[0] == 5:          # floor orbit: FC-side distance to anchor [m]
+            _orb_cache[1] = r.debug[1]
         t_msp = time.perf_counter()
         ail = -r.stab_roll if FLIP_AIL else r.stab_roll
         ele = -r.stab_pitch if FLIP_ELE else r.stab_pitch
@@ -481,7 +488,8 @@ def loop(secs, phase, rc, thr_override=None, print_every=1.0, freeze=False, gps=
                   f"{_gps_cache[0]},{_gps_cache[1]},{getattr(plant, '_flap_pos', 0.0):.2f},"
                   f"{_safety_cache[0]},{_accw_cache[0]},{_baro_pa},"
                   f"{gps_frame['alt_cm'] if gps_frame else ''},"
-                  f"{_inj_x},{_inj_y},{_inj_vn},{_inj_ve}\n")
+                  f"{_inj_x},{_inj_y},{_inj_vn},{_inj_ve},"
+                  f"{_orb_cache[0]},{_orb_cache[1]}\n")
         if time.time() - last > print_every:
             print(f"  [{phase:7}] FC {fr:+7.1f}/{fp:+6.1f}/{fy:3.0f} | JS {jr:+7.1f}/{jp:+6.1f}/{jy:5.1f} | "
                   f"IAS {plant.ias_kts():3.0f} alt {plant.z:5.0f} ele {ele:+.2f}")
@@ -563,6 +571,8 @@ MAN_RC = {   # SEL detents: 1270 INVERT / 1510 KN L / 1750 KN R / 1985 HANG
                                                       # reprogrammed via MSP between legs
     "show":        dict(angle=RC_HIGH),               # one video per airplane:
                                                       # capability-derived sequence
+    "circle_probe": dict(angle=RC_HIGH),              # AHRS circle probe
+    "poshold_probe": dict(angle=RC_HIGH),             # vanilla LOTR control
     "gyro_tip":    dict(angle=RC_HIGH),               # autogyro tip-over pair:
                                                       # --guard adds ROTOR GUARD
 }[MAN]
@@ -616,6 +626,24 @@ elif MAN == "loop_fig":
     loop(16, "loop", rc_ch(thr=1900, arm=RC_HIGH, **MAN_RC), print_every=0.7)
     loop(6, "level", rc_ch(thr=1650, arm=RC_HIGH, **MAN_RC), print_every=0.7)
     loop(4, "exit", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
+elif MAN == "poshold_probe":
+    # CONTROL EXPERIMENT: vanilla INAV NAV POSHOLD (LOTR) on this
+    # airframe, no floor, no forced entry - the runner maps the NAV
+    # POSHOLD box (perm 11) onto the floor channel band. If the naked
+    # loiter thrashes the same +-bank square wave, the disease is the FW
+    # position controller on this airframe, not our floor wiring.
+    loop(15, "level", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH), print_every=1)
+    loop(60, "poshold", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH, floor=1900),
+         print_every=2)
+    loop(4, "exit", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH), print_every=1)
+elif MAN == "circle_probe":
+    # AHRS isolation probe: a steady coordinated circle in plain ANGLE
+    # (held aileron), no spin, no nav - measures the yaw estimate against
+    # truth through sustained turning. Fly with --mag alone vs --gps
+    # --mag to separate the mahony mag path from the COG admixture.
+    loop(60, "circle", rc_ch(thr=1650, arm=RC_HIGH, ail=1900, angle=RC_HIGH),
+         print_every=2)
+    loop(4, "level", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH), print_every=1)
 elif MAN == "fig_abort":
     # REVIEW-FIX PROOF (figure_sequencer latched-flag bug): the sequence
     # (fig_abort_proof.json) runs a 4 s full-yaw IMPULSE; the pilot drops
@@ -657,7 +685,22 @@ elif MAN == "floor_spin":
     loop(3, "spin-hold", rc_ch(thr=1650, arm=RC_HIGH, angle=1375, floor=1900), print_every=0.7)
     loop(8, "flat-spin", rc_ch(thr=1000, arm=RC_HIGH, rud=2000, angle=1375, floor=1900), print_every=0.7)
     loop(12, "caught", rc_ch(thr=1050, arm=RC_HIGH, angle=1375, floor=1900), print_every=0.7)
-    loop(5, "exit", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH, floor=1900), print_every=0.7)
+    # THE FORGOTTEN SWITCH (Daniel's latch + orbit contract): the FSPIN
+    # box STAYS selected after the catch, sticks released, trim throttle.
+    # The recovery must NOT hand back - it climbs to the floor and ORBITS
+    # there (gentle bank, altitude held), giving the pilot time to collect
+    # themselves. The latch keeps the spin hold out the whole time.
+    # 60 s: the orbit engages ~200 m downrange at the +-180 bearing edge,
+    # carves a half-turn away first (measured peak ~650 m), returns at
+    # ~23 m/s (~30 s) and then settles on the circle - the anchor
+    # assertion judges the LAST quarter, on the established circle
+    loop(60, "forgot", rc_ch(thr=1650, arm=RC_HIGH, angle=1375, floor=1900), print_every=0.7)
+    # the pilot collects themselves and TAKES OVER: a fresh aileron blip
+    # after centered sticks releases the orbit - and the latched FSPIN
+    # must NOT re-engage even though its switch is still selected
+    loop(1, "takeover", rc_ch(thr=1650, arm=RC_HIGH, ail=1700, angle=1375, floor=1900), print_every=0.7)
+    loop(5, "after-takeover", rc_ch(thr=1650, arm=RC_HIGH, angle=1375, floor=1900), print_every=0.7)
+    loop(4, "exit", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH, floor=1900), print_every=0.7)
 elif MAN == "floor_panic":
     # dive with the throttle CHOPPED (the panic case): the recovery climb
     # must get its own energy (cruise + pitch-to-throttle floor), the motor
