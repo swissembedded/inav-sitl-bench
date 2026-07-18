@@ -199,6 +199,60 @@ trail, = ax.plot([], [], [], color="0.6", lw=1.2)
 seg_lines = [ax.plot([], [], [], lw=2.5)[0] for _ in SEGS]
 txt = ax.text2D(0.02, 0.95, "", transform=ax.transAxes, fontsize=10)
 mtxt = ax.text2D(0.02, 0.88, "", transform=ax.transAxes, fontsize=14, fontweight="bold", color="#d62728")
+
+# EVENT NARRATION in the film itself (Daniel): a per-frame caption derived
+# from the LOGGED data - phase labels for the figures, and the FW safety
+# word overrides everything the moment a recovery owns the aircraft.
+PHASE_TEXT = {
+    "einflug": "trim: the controller finds its level throttle",
+    "base": "level base line", "base-spin": "level base line",
+    "base-floor": "level base line",
+    "inverted": "INVERTED HOLD",
+    "inv-bleed": "bleeding speed inside the hold before release",
+    "roll": "AXIAL ROLL", "loop": "LOOP",
+    "knife-L": "KNIFE EDGE LEFT", "knife-R": "KNIFE EDGE RIGHT",
+    "knife_left": "KNIFE EDGE LEFT", "knife_right": "KNIFE EDGE RIGHT",
+    "spin-hold": "FLAT SPIN: attitude held flat",
+    "spin-rud": "FLAT SPIN: the pilot's rudder drives the rotation",
+    "rud-release": "rudder released: rotation stops, attitude still held",
+    "flaps-out": "flaps deploying (slow 2 s servo)",
+    "harrier": "BLOWN-FLAP HARRIER: high alpha on the prop wash",
+    "flaps-slow": "FLAPS SLOW PASS",
+    "hang": "PROP HANG: the controller finds its hover throttle",
+    "bleed": "bleeding excess speed on a shallow downline",
+    "exit": "exit to level",
+    "floor-dive": "HELD DIVE into the floor line...",
+    "dive-held": "HELD DIVE into the floor line...",
+    "dive-chop": "PANIC DIVE: throttle chopped, elevator held...",
+    "dive-nofloor": "same dive, floor OFF: it punches through",
+    "cruise": "cruise",
+    "slow-decay": "throttle cut: the rotor is starving",
+    "tip-window": "rotor starved: tilt authority is gone",
+    "after": "throttle returned",
+    "land-idle": "throttle to IDLE: landing - the guard stands down by design",
+    "gust": "downdraft gust",
+    "takeover": "pilot takes over: fresh stick input releases the floor",
+}
+
+
+def annotate(i):
+    s = int(float(rows[i].get("safety", 0) or 0))
+    if s & 4:
+        return ("CAUGHT: rotor guard - thrust restores the rotor", "#d62728")
+    if s & 2:
+        return ("CAUGHT: the floor flies the recovery", "#d62728")
+    ph_i = ph[i]
+    alt_i = z[i]
+    roll_i = abs(math.degrees(rpy[i][0]))
+    if ph_i in ("slow-decay", "tip-window", "after", "land-idle") and alt_i < 1.5:
+        return ("IMPACT", "#d62728")
+    if ph_i in ("slow-decay", "tip-window", "land-idle") and roll_i > 60:
+        return ("TIPPING OVER", "#d62728")
+    return (PHASE_TEXT.get(ph_i, ""), "0.25")
+
+
+anntxt = ax.text2D(0.5, 0.99, "", transform=ax.transAxes, fontsize=12,
+                   fontweight="bold", ha="center", va="top")
 # --- right column: four identical panels (same x, width, height, spacing) ---
 import os
 PX, PW, PH = 0.74, 0.22, 0.155
@@ -363,13 +417,16 @@ def frame(i):
     markerP.set_xdata([t[i], t[i]])
     markerO.set_xdata([t[i], t[i]])
     mtxt.set_text(mode[i])
+    _a, _c = annotate(i)
+    anntxt.set_text(_a)
+    anntxt.set_color(_c)
     dotL.set_data([-1.4 + st_rud[i]], [st_thr[i] * 2 - 1])
     dotR.set_data([1.4 + st_ail[i]], [-st_ele[i]])
     for b, series in zip(bars, _out_series):
         b.set_width(series[i])
     levers.set_data([0, 1, 2],
                     [sw_y(k, sw_detent(k, sw[k][i])) for k in SW_COLS])
-    return seg_lines + [trail, txt, mtxt, marker, markerP, markerO, dotL, dotR, levers] + list(bars)
+    return seg_lines + [trail, txt, mtxt, anntxt, marker, markerP, markerO, dotL, dotR, levers] + list(bars)
 
 anim = FuncAnimation(fig, frame, frames=len(rows), interval=60, blit=False)
 outdir = "docs/videos"; os.makedirs(outdir, exist_ok=True)

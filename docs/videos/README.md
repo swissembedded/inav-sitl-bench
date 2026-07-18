@@ -74,12 +74,17 @@ FLOOR switch is on for the entire flight. Sensor suite: GPS + magnetometer
 
 - `jsbsim_autog2_tip_manual.mp4` - Durafly Auto-G2: slow flight starves
   the rotor (lift and roll authority both go with rotor rpm squared);
-  the retreating-blade stall wins, the gyro rolls past 150 deg and goes
-  in. The honest failure, protection off.
+  the retreating-blade stall wins, the gyro rolls away past recovery and
+  goes in. The honest failure, protection off.
 - `jsbsim_autog2_tip_guard.mp4` - the same starving with the ROTOR GUARD
   box on: every tip-over is caught (wings level, nose slightly down,
   throttle floor - thrust is the only lever that restores rotor rpm),
   and when the pilot returns the throttle the aircraft is FLYING.
+- `jsbsim_autog2_tip_land.mp4` - the landing contract: guard armed, the
+  pilot pulls the throttle to IDLE. The rotor starves and the gyro tips,
+  but the guard stands down by design - an idle stick is landing intent,
+  and the FC never raises the thrust against it (the panel shows the
+  throttle output pinned at zero through the tip).
 
 ## Single-maneuver deep dives (reference airframe)
 
