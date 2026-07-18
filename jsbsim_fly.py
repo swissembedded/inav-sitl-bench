@@ -663,6 +663,11 @@ elif MAN == "fig_abort":
                                       angle=RC_HIGH), print_every=2)
     loop(5, "caught", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH),
          print_every=0.7)
+    # latch contract: the orbit holds until the pilot acts - close level
+    loop(1, "takeover", rc_ch(thr=1650, ail=1700, arm=RC_HIGH, angle=RC_HIGH),
+         print_every=0.7)
+    loop(3, "level-out", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH),
+         print_every=0.7)
 elif MAN in ("flat_spin", "inv_spin", "knife_spin"):
     # FLAT SPIN family: the box holds the selected attitude (flat, inverted
     # or knife edge via SEL) while the pilot's rudder commands the rotation
@@ -829,6 +834,14 @@ elif MAN == "show":
             else:
                 loop(0.7, label, rc_ch(thr=max(1000, thrL - 200), ele=1300,
                                            arm=RC_HIGH, angle=RC_HIGH), print_every=2)
+        # a coarse descent leg can genuinely overshoot BELOW the floor line
+        # (0.7 s steps at 10-15 m/s sink are 7-10 m each) and the recovery
+        # does NOT hand back by itself - the pilot must acknowledge: settle
+        # the sticks, then a fresh aileron blip releases it, then the base
+        loop(1, label.replace("transit", "base"), rc_ch(thr=thrL, arm=RC_HIGH, angle=RC_HIGH), print_every=2)
+        if _safety_cache[0] & 2:
+            loop(1, label.replace("transit", "base"),
+                 rc_ch(thr=thrL, ail=1700, arm=RC_HIGH, angle=RC_HIGH), print_every=2)
         loop(3, label.replace("transit", "base"), rc_ch(thr=thrL, arm=RC_HIGH, angle=RC_HIGH), print_every=2)
 
     def _exit():
@@ -907,7 +920,10 @@ elif MAN == "show":
         # override). Daniel: go higher if it needs the height - the spin
         # segment may exceed the 122 m video ceiling, the gate scopes it.
         _to_alt(130, label="transit-spin")
-        loop(3, "spin-hold", rc_ch(thr=thrL, arm=RC_HIGH, angle=1375), print_every=0.7)
+        # spin-hold BELOW the level trim: the hold only needs the attitude,
+        # and every knot carried into the rudder converts to a zoom at the
+        # autorotation entry (timber: 151.9 m in early spin-rud, cap 148)
+        loop(3, "spin-hold", rc_ch(thr=max(1000, thrL - 150), arm=RC_HIGH, angle=1375), print_every=0.7)
         loop(5, "spin-rud", rc_ch(thr=1000, rud=2000, arm=RC_HIGH, angle=1375),
              print_every=0.7)
         # NO bleed after a spin: it ends SLOW by design - there is no excess
@@ -918,12 +934,16 @@ elif MAN == "show":
 
     def _fig_hang():
         # the pull converts the base-line speed to height (v^2/2g plus the
-        # hover-PID settle) - enter low so the hang sits mid-window; the
-        # exit dive rebuilds speed, so it too bleeds at idle first
-        _to_alt(65)
+        # hover-PID settle); 80 m entry: the sagging hold must stay above
+        # the 55 m floor line with margin - a hang that sags through the
+        # line gets caught and the catch does not hand back (measured: the
+        # funjet handoff collapsed straight into the hover engage from 65).
+        # NO bleed after: the hang ends at hover speed by design - an idle
+        # nose-down bleed only dives back through the line (the timber catch)
+        _to_alt(80)
         loop(10, "hang", rc_ch(thr=1500, arm=RC_HIGH, angle=RC_LOW, sel=1985),
              print_every=0.7)
-        _exit()
+        loop(3, "exit", rc_ch(thr=thrL, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
 
     def _fig_flaps_harrier():
         # slow flaps out (2 s servo travel), high alpha, reduced power -
@@ -975,12 +995,11 @@ elif MAN == "show":
     # climb out against the stick. The figures above never needed to skim
     # the line; this single catch is the floor's proof.
     print(f"=== SHOW {_model}: floor test ===")
-    # from 110: the predictive catch fires around 85 true regardless (3 s
-    # lookahead), but the dive ahead of it is VISIBLE - from 75 the whole
-    # finale played out in 11 m (measured), no demo at all
-    # 105: a hot jet carries the transit momentum ballistically into the
-    # dive phase (124.6 m measured at target 110) - 105 keeps the peak
-    # under the ceiling with the dive still ~50 m of visible drop
+    # 105 entry: the floor is the BREAKTHROUGH law (engage at the 55 m
+    # line, sinking - no prediction), so the dive is ~50 m of visible drop
+    # before the catch. A hot jet still carries the transit momentum
+    # ballistically into the dive phase (124.6 m measured at target 110) -
+    # 105 keeps the peak under the ceiling
     _to_alt(105, label="transit-floor")
     # TRIM-RELATIVE throttles (fixed values were the timber lesson again:
     # 1700 on a T/W-2 airframe is fast level flight, not a dive, and a
@@ -996,6 +1015,13 @@ elif MAN == "show":
         loop(0.5, "floor-dive", rc_ch(thr=max(1100, thrL - 150), ele=1150,
                                       arm=RC_HIGH, angle=RC_HIGH), print_every=2)
     loop(6, "caught", rc_ch(thr=thrL, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
+    # THE LATCH CONTRACT (Daniel): the recovery never hands back by itself -
+    # it climbs to the floor and ORBITS the breach point until the pilot
+    # acts. Show the ring, then the pilot collects themselves, takes over
+    # with a fresh aileron blip and closes the show level.
+    loop(10, "orbit", rc_ch(thr=thrL, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
+    loop(1, "takeover", rc_ch(thr=thrL, ail=1700, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
+    loop(5, "level-out", rc_ch(thr=thrL, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
 elif MAN == "gyro_tip":
     # THE TIP-OVER PAIR (floor_dive contrast pattern, Daniel's spec): slow
     # flight starves the rotor - rpm decays with the inflow, the lateral

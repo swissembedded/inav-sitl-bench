@@ -139,7 +139,8 @@ def verify_show(tag, repertoire):
                       ("settle", "cal", "armL", "armH", "level", "einflug",
                        "transit", "transit-spin", "transit-floor", "base",
                        "base-spin", "base-floor", "bleed", "exit",
-                       "rud-release", "floor-dive", "caught")]
+                       "rud-release", "floor-dive", "caught",
+                       "orbit", "takeover", "level-out")]
         overridden = sum(1 for r in fig_frames if int(r["safety"]) & 2)
         if fig_frames and overridden > len(fig_frames) * 0.05:
             fails.append(f"figures flown under floor override "
@@ -285,6 +286,138 @@ def verify_gyro_pair():
     endroll = statistics.median(abs(float(r["js_roll"])) for r in tail)
     if endroll > 20:
         fails.append(f"guard: end roll {endroll:.0f} > 20")
+    return (not fails), fails
+
+
+def verify_floor_spin():
+    """Latch + orbit contract on the forgotten-switch flight (Daniel): the
+    catch must LATCH (no hand-back with the FSPIN box still selected), the
+    aircraft must orbit near the breach point at/above the floor, and only
+    a fresh stick takeover releases it. The orbit has TWO legal forms,
+    discriminated by safety bit 32 (orbitViaNav): a healthy position
+    estimate flies the real nav loiter on the breach anchor at the
+    speed-matched nav_fw_loiter_radius (150 m); without one the hold flies
+    a constant-bank circle whose radius is set by physics, R = v^2 /
+    (g tan22) - and with the pilot's trim throttle held it rides ABOVE the
+    floor (pitch capped at -5: degradation on the safe side, documented)."""
+    rows = list(csv.DictReader(open("jsbsim_log_floor_spin.csv")))
+    fails = []
+    LINE = 25.0 + 25.0        # arm-low net: alt_floor_altitude 25 over ground 25
+    caught = [r for r in rows if r["phase"] in ("flat-spin", "caught") and int(r["safety"]) & 2]
+    if not caught:
+        fails.append("floor never caught the spin")
+    forgot = [r for r in rows if r["phase"] == "forgot"]
+    late = forgot[3 * len(forgot) // 4:]
+    if caught and late:
+        if sum(1 for r in late if int(r["safety"]) & 2) < len(late) * 0.9:
+            fails.append("recovery released without pilot takeover (latch broken)")
+        alts = [float(r["alt"]) for r in late]
+        if min(alts) < LINE:
+            fails.append(f"orbit sagged under the floor line: {min(alts):.0f}")
+        if max(alts) - min(alts) > 12:
+            fails.append(f"orbit altitude wanders {min(alts):.0f}-{max(alts):.0f}")
+        b = caught[0]
+        bx, by = float(b["x"]), float(b["y"])
+        d = [((float(r["x"]) - bx) ** 2 + (float(r["y"]) - by) ** 2) ** 0.5 for r in late]
+        med = statistics.median(d)
+        viaNav = sum(1 for r in late if int(r["safety"]) & 32) > len(late) * 0.5
+        if viaNav:
+            if abs(med - 150.0) > 70 or max(d) > 280:
+                fails.append(f"nav orbit off the ring: median {med:.0f} max {max(d):.0f}")
+        else:
+            roll = statistics.median(abs(float(r["js_roll"])) for r in late)
+            if not (12 <= roll <= 32):
+                fails.append(f"degraded orbit bank {roll:.0f} not ~22")
+            if med > 220:
+                fails.append(f"degraded orbit drifted {med:.0f} m from the breach")
+    after = [r for r in rows if r["phase"] == "after-takeover"]
+    if after:
+        tail = after[len(after) // 3:]
+        if any(int(r["safety"]) & 2 for r in tail):
+            fails.append("recovery active after takeover")
+    return (not fails), fails
+
+
+def verify_floor_dive():
+    """Held-stick dive: the floor must catch AGAINST the held elevator and
+    defend the line - the nav orbit honors pilot pitch as a rate override,
+    so the FW re-breach guard must keep dropping back to the aggressive
+    climb (measured failure without it: orbit ridden down to 24 m)."""
+    rows = list(csv.DictReader(open("jsbsim_log_floor_dive.csv")))
+    fails = []
+    held = [r for r in rows if r["phase"] == "dive-held"]
+    if not any(int(r["safety"]) & 2 for r in held):
+        fails.append("held dive never caught")
+    if held:
+        alts = [float(r["alt"]) for r in held]
+        if min(alts) < 20.0:
+            fails.append(f"held dive sank to {min(alts):.0f} - the re-breach "
+                         f"defense lost the aircraft")
+        if float(held[-1]["alt"]) < 40.0:
+            fails.append(f"held dive ends at {float(held[-1]['alt']):.0f}, "
+                         f"line not recaptured")
+        nof = [r for r in rows if r["phase"] == "dive-nofloor"]
+        if nof and min(float(r["alt"]) for r in nof) >= min(alts):
+            fails.append("contrast pass did not punch below the caught dive")
+    return (not fails), fails
+
+
+def verify_floor_panic():
+    """Chopped-throttle dive: the recovery climb gets its own energy (the
+    throttle floor must rise against the idle stick), defends the line,
+    and a fresh deflection after centered sticks releases it."""
+    rows = list(csv.DictReader(open("jsbsim_log_floor_panic.csv")))
+    fails = []
+    chop = [r for r in rows if r["phase"] == "dive-chop"]
+    rec = [r for r in chop if int(r["safety"]) & 2]
+    if not rec:
+        fails.append("chopped dive never caught")
+    else:
+        alts = [float(r["alt"]) for r in chop]
+        if min(alts) < 20.0:
+            fails.append(f"chopped dive sank to {min(alts):.0f}")
+        if max(float(r["fc_thr"]) for r in rec) < 0.3:
+            fails.append("recovery never raised the throttle against the chop")
+    after = [r for r in rows if r["phase"] == "after"]
+    if after and float(statistics.median(float(r["alt"]) for r in after)) < 45.0:
+        fails.append("post-catch hold below the recovery band")
+    tk = [r for r in rows if r["phase"] == "takeover"]
+    tail = tk[len(tk) // 2:]
+    if tail and sum(1 for r in tail if int(r["safety"]) & 2) > len(tail) * 0.2:
+        fails.append("takeover did not release the recovery")
+    return (not fails), fails
+
+
+def verify_fig_abort():
+    """Sequencer abort proof: the impulse spins, dropping the box kills the
+    open-loop command, the floor still catches the after-dive, and the
+    takeover closes the flight released and level."""
+    rows = list(csv.DictReader(open("jsbsim_log_fig_abort.csv")))
+    fails = []
+
+    def yawrate(seg):
+        rates, prev = [], None
+        for r in seg:
+            y = float(r["js_yaw"])
+            if prev is not None:
+                rates.append(abs((y - prev + 540) % 360 - 180) * 1000.0)
+            prev = y
+        rates.sort()
+        return rates[len(rates) // 2] if rates else 0.0
+
+    imp = [r for r in rows if r["phase"] == "impulse"]
+    rel = [r for r in rows if r["phase"] == "abort-release"]
+    if yawrate(imp) < 100:
+        fails.append("impulse never spun")
+    if yawrate(rel[len(rel) // 2:]) > 60:
+        fails.append("stale impulse persists after the box drop")
+    if not any(int(r["safety"]) & 2 for r in rows
+               if r["phase"] in ("floor-dive", "caught")):
+        fails.append("floor never caught the post-abort dive")
+    lvl = [r for r in rows if r["phase"] == "level-out"]
+    tail = lvl[len(lvl) // 3:]
+    if tail and sum(1 for r in tail if int(r["safety"]) & 2) > len(tail) * 0.2:
+        fails.append("takeover did not release the recovery")
     return (not fails), fails
 
 
