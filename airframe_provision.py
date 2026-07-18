@@ -11,6 +11,7 @@ by feedback and records it in airframe_trim.json.
 """
 import os
 import shutil
+import struct
 import sys
 import time
 
@@ -80,6 +81,10 @@ def provision_model(model):
     msp = MspClient()
     n = provision_mixer(msp, actuators)
     msp.set_servo_mixer_rule(n, 0, 0, rate=0)   # terminate the rule list
+    if model == "binary":
+        # the Binary carries a real pitot (Daniel) - FAKE driver, the
+        # HITL stream injects the truth airspeed
+        msp.set_setting("pitot_hardware", struct.pack("<B", 5))
     if actuators == "GYRO":
         # the gyro flies NO attitude presets and no figure bands - rebuild
         # the mode map from scratch: ARM, ANGLE, FLOOR, ROTOR GUARD (perm

@@ -45,6 +45,7 @@ HITL_ENABLE = 1 << 0
 HITL_MUTE_BEEPER = 1 << 2
 HITL_USE_IMU = 1 << 3
 HITL_HAS_NEW_GPS_DATA = 1 << 4
+HITL_AIRSPEED = 1 << 6
 HITL_SIM_RC_INPUT = 1 << 11
 
 BENCH_FLAGS = HITL_ENABLE | HITL_MUTE_BEEPER | HITL_USE_IMU | HITL_SIM_RC_INPUT
@@ -69,7 +70,8 @@ def pack_request(acc_mg: tuple[int, int, int],
                  baro_pa: int = 101325,
                  mag: tuple[int, int, int] = (0, 0, 0),
                  flags: int = BENCH_FLAGS,
-                 gps: dict | None = None) -> bytes:
+                 gps: dict | None = None,
+                 airspeed_cms: int | None = None) -> bytes:
     assert len(rc_channels_us) == 8
     # a diverged plant (crash, numerical blow-up) produces pressures far
     # outside the packable range; fail with a diagnosis instead of an
@@ -81,6 +83,8 @@ def pack_request(acc_mg: tuple[int, int, int],
             "is not a packing bug)")
     if gps is not None:
         flags |= HITL_HAS_NEW_GPS_DATA
+    if airspeed_cms is not None:
+        flags |= HITL_AIRSPEED
     p = struct.pack("<BH", 3, flags)
     if gps is not None:
         p += struct.pack("<BBiiihhhhh",
@@ -95,6 +99,11 @@ def pack_request(acc_mg: tuple[int, int, int],
     p += struct.pack("<hhh", *[int(v) for v in gyro_dps16])
     p += struct.pack("<I", baro_pa)
     p += struct.pack("<hhh", *mag)
+    if airspeed_cms is not None:
+        # pitot injection (HITL_AIRSPEED): u16 cm/s, read by the FW right
+        # after the mag block (vbat byte absent - we never set the
+        # battery option); pitot.airSpeed takes the value verbatim
+        p += struct.pack("<H", max(0, min(65535, int(airspeed_cms))))
     p += struct.pack("<HH", 0xFFFF, 0)                               # rangefinder off, current
     p += struct.pack("<8H", *[int(v) for v in rc_channels_us])
     p += struct.pack("<H", 1000)                                     # rssi

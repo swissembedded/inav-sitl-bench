@@ -133,7 +133,15 @@ def verify_show(tag, repertoire):
     div_spin, div_rest = 0.0, 0.0
     prev_up = None
     teleport = None
+    PREP = ("settle", "cal", "armL", "armH")
     for r in rows:
+        if r["phase"] in PREP:
+            # the AHRS is CONVERGING here by design (frozen plant, initial
+            # alignment - with the mag active the first seconds swing) -
+            # the flight script's own divergence tracker always skipped
+            # these phases, the gate now does too
+            prev_up = (float(r["js_roll"]), float(r["js_pitch"]))
+            continue
         d = _tilt_div(float(r["fc_roll"]), float(r["fc_pitch"]),
                       float(r["js_roll"]), float(r["js_pitch"]))
         if r["phase"] in SPIN_PHASES:
@@ -253,18 +261,30 @@ def main():
             print(f"=== {model}: gyro flies its own pair, skipped ===")
             continue
         print(f"=== {model} show ===", flush=True)
-        if os.path.exists("fcdata/eeprom.bin"):
-            os.remove("fcdata/eeprom.bin")
-        run("podman", "restart", CONTAINER)
-        run(sys.executable, "-c", "import time; time.sleep(4)")
-        run(sys.executable, "airframe_provision.py", model)
+        # PER-MODEL FC IMAGE (Daniel: the model's config travels with it):
+        # a saved eeprom_<model>.bin is restored directly - the settings
+        # ARE the airframe's; provisioning runs only when no image exists
+        # yet, and writes one for next time
+        if os.path.exists(f"eeprom_{model}.bin"):
+            shutil.copy(f"eeprom_{model}.bin", "fcdata/eeprom.bin")
+            run("podman", "restart", CONTAINER)
+            run(sys.executable, "-c", "import time; time.sleep(4)")
+        else:
+            if os.path.exists("fcdata/eeprom.bin"):
+                os.remove("fcdata/eeprom.bin")
+            run("podman", "restart", CONTAINER)
+            run(sys.executable, "-c", "import time; time.sleep(4)")
+            run(sys.executable, "airframe_provision.py", model)
         # the flight aborts loudly when the FC will not arm (boot race,
-        # observed once) - one restart + retry covers it
+        # observed once) - one restart + retry covers it. The sensor
+        # suite is the standard: GPS + mag for everyone, the pitot rides
+        # on the airframes that carry one (binary).
+        suite = ["--gps", "--mag"] + (["--pitot"] if model == "binary" else [])
         for attempt in (1, 2):
             run("podman", "restart", CONTAINER)
             run(sys.executable, "-c", "import time; time.sleep(4)")
             r = subprocess.run([sys.executable, "jsbsim_fly.py", "--flip-ele",
-                                "--lockstep", "--model", model, "show"])
+                                "--lockstep", "--model", model, "show"] + suite)
             if r.returncode == 0:
                 break
             print(f"  flight aborted (attempt {attempt}), retrying", flush=True)

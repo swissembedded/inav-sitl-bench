@@ -164,6 +164,7 @@ FLOOR_ON = "--floor" in sys.argv or _man == "show"   # show: net always on
 GPS_ON = "--gps" in sys.argv or "--gps-real" in sys.argv
 GPS_REAL = "--gps-real" in sys.argv
 MAG_ON = "--mag" in sys.argv
+PITOT_ON = "--pitot" in sys.argv   # inject truth airspeed (pitot-equipped airframes)
 _MAG_GLITCH = None
 if "--mag-glitch" in sys.argv:
     _i = sys.argv.index("--mag-glitch")
@@ -313,7 +314,9 @@ def loop(secs, phase, rc, thr_override=None, print_every=1.0, freeze=False, gps=
                 if _MAG_GLITCH[0] <= _tn < _MAG_GLITCH[0] + _MAG_GLITCH[1]:
                     _mag = (0, 0, 0)
         _baro_pa = plant.baro_pa()
-        r = sim_step(m, plant.acc_mg(), plant.gyro_dps16(), rc_sent, baro_pa=_baro_pa, gps=gps_frame, mag=_mag)
+        _asp = int(plant.ias_kts() * 51.444) if PITOT_ON else None
+        r = sim_step(m, plant.acc_mg(), plant.gyro_dps16(), rc_sent, baro_pa=_baro_pa, gps=gps_frame, mag=_mag,
+                     airspeed_cms=_asp)
         if r.debug[0] == 7:            # FW safety word cycles in slot 7
             _safety_cache[0] = r.debug[1]
         elif r.debug[0] == 6:          # FW effective acc weight
@@ -791,7 +794,10 @@ elif MAN == "show":
     # from 110: the predictive catch fires around 85 true regardless (3 s
     # lookahead), but the dive ahead of it is VISIBLE - from 75 the whole
     # finale played out in 11 m (measured), no demo at all
-    _to_alt(110, label="transit-floor")
+    # 105: a hot jet carries the transit momentum ballistically into the
+    # dive phase (124.6 m measured at target 110) - 105 keeps the peak
+    # under the ceiling with the dive still ~50 m of visible drop
+    _to_alt(105, label="transit-floor")
     # TRIM-RELATIVE throttles (fixed values were the timber lesson again:
     # 1700 on a T/W-2 airframe is fast level flight, not a dive, and a
     # 1650 climb-out rockets to 161 m): near-idle dive so EVERY airframe
