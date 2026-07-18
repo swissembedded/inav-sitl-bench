@@ -1023,7 +1023,15 @@ elif MAN == "show":
     # it climbs to the floor and ORBITS the breach point until the pilot
     # acts. Show the ring, then the pilot collects themselves, takes over
     # with a fresh aileron blip and closes the show level.
-    loop(10, "orbit", rc_ch(thr=thrL, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
+    # orbit dwell with pilot energy management: under a DEGRADED orbit
+    # (constant bank, pitch capped at -5 on the safe side) a hot jet at
+    # trim throttle rides the circle upward and out of the arena (a10:
+    # through 106 m, release zooming to 127) - power back when it climbs.
+    # Throttle is not a takeover channel, the orbit stays engaged.
+    _t0o = _frames[0]
+    while (_frames[0] - _t0o) * DT < 10:
+        loop(0.5, "orbit", rc_ch(thr=(1150 if plant.z > 90 else thrL),
+                                 arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
     loop(1, "takeover", rc_ch(thr=thrL, ail=1700, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
     # BELOW trim: released at the orbit's energy, a hot airframe at thrL
     # zooms out of the 122 ceiling (a10: 134 m, vampire: 122.1 measured)
