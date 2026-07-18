@@ -141,6 +141,7 @@ _START_M = {
     "crash_test": 104, "snap_neg": 104,
     "floor_dive": 25, "floor_panic": 25, "floor_spin": 25,   # arm low -> low net
     "seq": 120, "seq_chain": 120,   # aerobatic routines: exempt, they climb high
+    "fig_abort": 110,   # abort-proof: spin impulse up high, dive to the net after
     "show": 25,   # one-video-per-airplane: arm low, Einflug, sequence
     "gyro_tip": 80,   # autogyro tip-over pair: the T/W-0.83 gyro cannot climb
                       # there itself - start high enough that TWO catch
@@ -468,6 +469,8 @@ MAN_RC = {   # SEL detents: 1270 INVERT / 1510 KN L / 1750 KN R / 1985 HANG
     "hang_tvc":    dict(sel=1985),                    # prop hang on the TVC pusher delta
     "seq":         dict(angle=1675),                  # FIGSEQ band: flies whatever
                                                       # sequence figure_script.py programmed
+    "fig_abort":   dict(angle=1675),                  # abort-proof: FIGSEQ dropped
+                                                      # mid-IMPULSE, then floor dive
     "seq_chain":   dict(angle=1675),                  # three routines back-to-back,
                                                       # reprogrammed via MSP between legs
     "show":        dict(angle=RC_HIGH),               # one video per airplane:
@@ -525,6 +528,23 @@ elif MAN == "loop_fig":
     loop(16, "loop", rc_ch(thr=1900, arm=RC_HIGH, **MAN_RC), print_every=0.7)
     loop(6, "level", rc_ch(thr=1650, arm=RC_HIGH, **MAN_RC), print_every=0.7)
     loop(4, "exit", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
+elif MAN == "fig_abort":
+    # REVIEW-FIX PROOF (figure_sequencer latched-flag bug): the sequence
+    # (fig_abort_proof.json) runs a 4 s full-yaw IMPULSE; the pilot drops
+    # the FIGSEQ box mid-impulse. The open-loop command must die with the
+    # box - on the buggy binary the latched flag kept commanding full yaw
+    # rate ahead of any recovery. Afterwards a held dive proves the floor
+    # catch still owns the aircraft.
+    loop(2, "figseq", rc_ch(thr=1650, arm=RC_HIGH, angle=1675), print_every=0.7)
+    loop(1, "impulse", rc_ch(thr=1650, arm=RC_HIGH, angle=1675), print_every=0.7)
+    loop(4, "abort-release", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH),
+         print_every=0.7)
+    _t0 = _frames[0]
+    while not (_safety_cache[0] & 2) and (_frames[0] - _t0) * DT < 25:
+        loop(0.5, "floor-dive", rc_ch(thr=1400, ele=1150, arm=RC_HIGH,
+                                      angle=RC_HIGH), print_every=2)
+    loop(5, "caught", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH),
+         print_every=0.7)
 elif MAN in ("flat_spin", "inv_spin", "knife_spin"):
     # FLAT SPIN family: the box holds the selected attitude (flat, inverted
     # or knife edge via SEL) while the pilot's rudder commands the rotation
