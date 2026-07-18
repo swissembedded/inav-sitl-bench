@@ -115,13 +115,17 @@ FLOOR switch is on for the entire flight. Sensor suite: GPS + magnetometer
 - `jsbsim_knife_spin.mp4` - knife-edge spin (FLAT SPIN + KNIFE L): the
   rudder command lands on the body pitch axis - the rotation the knife
   attitude leaves free.
+- `jsbsim_fig_abort.mp4` - the abort contract: a sequenced full-yaw
+  IMPULSE is running and the pilot drops the F SEQ box mid-segment. The
+  open-loop command dies with the box (no stale rates), and the held
+  dive afterwards proves the altitude floor still owns the recovery.
 
-## Safety floor demos (legacy - predictive engage era)
+## Safety floor demos (breakthrough law)
 
-These three were flown under the earlier predictive floor law; the
-current firmware engages on BREAKING THROUGH the line instead (no
-prediction - a piloted trajectory is not predictable). They will be
-re-shot in the final cut; the catch behavior itself looks the same.
+Flown under the current floor law: the recovery engages when the
+aircraft BREAKS THROUGH the line while sinking - no prediction, a
+piloted trajectory is not predictable. The pilot overrides with fresh
+stick input; all three end with the catch climbing out.
 
 - `jsbsim_floor_dive.mp4` - held dive into the floor, caught and leveled
   AGAINST the held stick; then the same dive with the floor off punches
