@@ -10,7 +10,7 @@ for name in ROUTINES:
     run("python", "bench.py", "provision")
     run("podman", "restart", CONTAINER); run("python", "-c", "import time; time.sleep(3)")
     run("python", "figure_script.py", f"examples/{name}.json")
-    run("python", "jsbsim_fly.py", "--flip-ele", "--lockstep", "seq")
+    run("python", "jsbsim_fly.py", "--flip-ele", "--lockstep", "--gps", "--mag", "seq")
     # trim the level tail: keep ~8 s after the last non-level/action frame
     rows = list(csv.DictReader(open("jsbsim_log_seq.csv")))
     hdr = rows[0].keys(); last = 0

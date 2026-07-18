@@ -9,12 +9,12 @@
   speed produces the ballooning/trim jolt the smix speed limit exists for.
   Coefficients are handbook estimates, good for behavior, not for exact
   stall speeds. The optional leading-edge slats are NOT modeled (v1).
-  Specs: span 1549 mm, S 0.361 m2, AUW ~1.6 kg, 3-blade 11x7.5 (T/W ~1).
+  Specs: span 1549 mm, S 0.361 m2, AUW ~1.6 kg, 3-blade 11x7.5 (T/W ~1.5).
 -->
 <fdm_config name="turbotimber" version="2.0" release="ALPHA">
   <fileheader>
     <author>Daniel Haensse</author>
-    <description>Turbo Timber Evolution 1.5m class STOL trainer, slotted flaps, 4S power (T/W ~2)</description>
+    <description>Turbo Timber Evolution 1.5m class STOL trainer, slotted flaps, 4S power (T/W ~1.5)</description>
   </fileheader>
 
   <metrics>
@@ -60,20 +60,24 @@
     </contact>
   </ground_reactions>
 
-  <!-- Idealized RC thruster (see aerobat3d): 7.0 LBS ~ 31 N static.
+  <!-- Idealized RC thruster (see aerobat3d): 5.3 LBS ~ 23.5 N static.
        4S with the factory 11x7.5 3-blade: measured 660 W (HobbySquawk
-       review wattmeter; 360 W on 3S) x ~4.8-5 g/W for an 11-inch prop
-       ~ 3.2 kg static on 1.6 kg => T/W ~2.0 - hovers at roughly half
-       throttle and punches out of the hang (pilot experience: 10-20 m
-       within the first seconds). Constant with airspeed like all bench
-       thrusters - steady vertical speed is optimistic, transients are
-       honest. -->
+       review wattmeter; 360 W on 3S) x ~3.6 g/W realistic for an
+       11-inch prop ~ 2.4 kg static on 1.6 kg AUW (Evo flying weight
+       1613-1701 g researched) => T/W ~1.5 - "unlimited vertical" per
+       the marketing, hovers around 2/3 throttle. The earlier 7.0 LBS
+       (T/W 2.0, 4.8-5 g/W) was optimistic (Daniel: the maximum was
+       wrong) and let residual throttle carry a powered mush. Mapping
+       stays LINEAR - INAV commands the ESC, motor-off is INAV's job
+       (output 1000 = zero thrust), not the plant's. Constant with
+       airspeed like all bench thrusters - steady vertical speed is
+       optimistic, transients are honest. -->
   <external_reactions>
     <force name="motor" frame="BODY" unit="LBS">
       <function>
         <product>
           <property> fcs/throttle-cmd-norm </property>
-          <value> 7.0 </value>
+          <value> 5.3 </value>
         </product>
       </function>
       <location unit="M"> <x> 0.40 </x> <y> 0 </y> <z> 0 </z> </location>
@@ -83,7 +87,7 @@
       <function>
         <product>
           <property> fcs/throttle-cmd-norm </property>
-          <value> 0.12 </value>
+          <value> 0.09 </value>
         </product>
       </function>
       <location unit="M"> <x> 0.40 </x> <y> 0.5 </y> <z> 0 </z> </location>
@@ -93,7 +97,7 @@
       <function>
         <product>
           <property> fcs/throttle-cmd-norm </property>
-          <value> 0.12 </value>
+          <value> 0.09 </value>
         </product>
       </function>
       <location unit="M"> <x> 0.40 </x> <y> -0.5 </y> <z> 0 </z> </location>
@@ -109,7 +113,7 @@
         <product>
           <property> fcs/throttle-cmd-norm </property>
           <property> fcs/flap-pos-norm </property>
-          <value> 3.5 </value>
+          <value> 2.65 </value>
         </product>
       </function>
       <location unit="M"> <x> 0.0 </x> <y> 0 </y> <z> 0 </z> </location>
@@ -267,14 +271,14 @@
         <product>
           <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
           <property>metrics/bw-ft</property> <property>fcs/aileron-pos-norm</property>
-          <value> 0.12 </value>
+          <value> 0.09 </value>
         </product>
       </function>
       <function name="aero/moment/Roll_aileron_propwash">
         <product>
           <property>fcs/throttle-cmd-norm</property>
           <property>fcs/aileron-pos-norm</property>
-          <value> 3.0 </value>
+          <value> 2.3 </value>
         </product>
       </function>
       <function name="aero/moment/Roll_dihedral">
@@ -333,7 +337,7 @@
         <product>
           <property>fcs/throttle-cmd-norm</property>
           <property>fcs/elevator-pos-norm</property>
-          <value> -5.0 </value>
+          <value> -3.8 </value>
         </product>
       </function>
     </axis>
@@ -356,14 +360,14 @@
         <product>
           <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
           <property>metrics/bw-ft</property> <property>fcs/rudder-pos-norm</property>
-          <value> 0.12 </value>
+          <value> 0.09 </value>
         </product>
       </function>
       <function name="aero/moment/Yaw_rudder_propwash">
         <product>
           <property>fcs/throttle-cmd-norm</property>
           <property>fcs/rudder-pos-norm</property>
-          <value> 6.0 </value>
+          <value> 4.5 </value>
         </product>
       </function>
     </axis>

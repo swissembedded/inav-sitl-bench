@@ -664,7 +664,7 @@ elif MAN == "show":
                 loop(0.7, label, rc_ch(thr=min(1900, thrL + 200), arm=RC_HIGH,
                                            angle=RC_HIGH), print_every=2)
             else:
-                loop(0.7, label, rc_ch(thr=max(1100, thrL - 200), ele=1300,
+                loop(0.7, label, rc_ch(thr=max(1000, thrL - 200), ele=1300,
                                            arm=RC_HIGH, angle=RC_HIGH), print_every=2)
         loop(3, label.replace("transit", "base"), rc_ch(thr=thrL, arm=RC_HIGH, angle=RC_HIGH), print_every=2)
 
@@ -675,7 +675,10 @@ elif MAN == "show":
         # idle with the nose SLIGHTLY down - level-pitch bleeding still
         # zooms (+12 m measured), only drag on a shallow downline kills
         # the energy without buying height.
-        loop(4, "bleed", rc_ch(thr=1100, ele=1400, arm=RC_HIGH, angle=RC_HIGH),
+        # 1000, not 1100: a chopped stick means MOTOR OFF (INAV stops the
+        # motor below mincheck=1100) - 1100 is one microsecond too high
+        # and leaves the 8 percent armed idle running (the timber mush)
+        loop(4, "bleed", rc_ch(thr=1000, ele=1400, arm=RC_HIGH, angle=RC_HIGH),
              print_every=0.7)
         loop(2, "exit", rc_ch(thr=thrL, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
 
@@ -688,7 +691,7 @@ elif MAN == "show":
         # something like 3000 deg/s, and the attitude estimate disagrees by
         # ~28 deg mid-snap (measured, funjet). Slow down first, release
         # second - half the energy, a civilized roll-out, honest AHRS.
-        loop(3, "inv-bleed", rc_ch(thr=1100, arm=RC_HIGH, angle=RC_LOW, sel=1270),
+        loop(3, "inv-bleed", rc_ch(thr=1000, arm=RC_HIGH, angle=RC_LOW, sel=1270),
              print_every=0.7)
         loop(3, "exit", rc_ch(thr=thrL, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
 
@@ -765,7 +768,11 @@ elif MAN == "show":
         _to_alt(72)
         plant.set_flaps(1.0)
         loop(3, "flaps-out", rc_ch(thr=thrL, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
-        loop(10, "harrier", rc_ch(thr=max(1100, thrL - 150), ele=1900, arm=RC_HIGH,
+        # clamp at 1150, NOT 1100: 1100 is the exact motor-stop boundary =
+        # 8 percent armed idle, and a blown-flap harrier without wash is
+        # just a deep stall (measured on the timber: thrL-150 fell to the
+        # clamp, exit at 16 kt, mush-trap transit to 350+ m)
+        loop(10, "harrier", rc_ch(thr=max(1150, thrL - 150), ele=1900, arm=RC_HIGH,
                                   angle=RC_HIGH), print_every=0.7)
         plant.set_flaps(0.0)
         # break the powered mush BEFORE handing back: the harrier
@@ -776,7 +783,11 @@ elif MAN == "show":
         # wash, nose-down drops the nose, gravity buys the speed back.
         _t0 = _frames[0]
         while plant.ias_kts() < 30 and (_frames[0] - _t0) * DT < 8:
-            loop(0.7, "exit", rc_ch(thr=1100, ele=1250, arm=RC_HIGH,
+            # FULL nose-down: a quarter stick (ANGLE target -25) moves the
+            # elevator a few percent and loses against the high-alpha trim
+            # moment at 16 kt (measured: pitch stayed +8). Full deflection
+            # or nothing - the airframe is stalled, be assertive.
+            loop(0.7, "exit", rc_ch(thr=1000, ele=1000, arm=RC_HIGH,
                                     angle=RC_HIGH), print_every=2)
         loop(3, "exit", rc_ch(thr=thrL, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
 

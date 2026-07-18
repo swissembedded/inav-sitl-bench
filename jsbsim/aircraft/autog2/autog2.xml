@@ -180,7 +180,17 @@
           overpowering the (rpm^2-weak) lateral tilt. THE researched
           tip-over driver at takeoff and in slow flight; a smooth
           asymmetry term alone lets the model sink wings-level into the
-          ground instead of tipping (measured).</description>
+          ground instead of tipping (measured).
+          CALIBRATED against the HobbyKing Auto-G2 V2 flight review
+          (youtu.be/aNTVGCxbk3w from 11:24, Daniel's reference): rolls
+          off LEFT only - the reviewer masks it by flying exclusively
+          left-hand turns when slow; character is a rapid lock-in to
+          35-45 deg bank in ~1-2 s (not a snap, not a wander), arrested
+          with throttle+rudder in 1-2 s. Mid-point -0.50 puts the bench
+          15-to-45-deg lock-in at ~1.1 s (was 0.3-0.8 s at -0.70, a
+          shade too aggressive). The deep-starve endpoint -0.90 is
+          never reached in the video (the pilot always catches first)
+          and stays extrapolated.</description>
         <product>
           <property>aero/qbar-psf</property> <property>metrics/Sw-sqft</property>
           <property>metrics/bw-ft</property>
@@ -188,7 +198,7 @@
             <independentVar lookup="row">fcs/rotor-rpm-norm</independentVar>
             <tableData>
               0.00  -0.90
-              0.40  -0.70
+              0.40  -0.50
               0.70   0.00
               1.30   0.00
             </tableData>
