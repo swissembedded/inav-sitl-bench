@@ -661,7 +661,14 @@ elif MAN == "show":
                 loop(0.7, label, rc_ch(thr=min(1900, thrL + 150), ele=1650,
                                            arm=RC_HIGH, angle=RC_HIGH), print_every=2)
             elif plant.ias_kts() < 22:
-                loop(0.7, label, rc_ch(thr=min(1900, thrL + 200), arm=RC_HIGH,
+                # ABOVE target and slow: gravity does the descending for
+                # free - idle, nose FULL down (a quarter stick moves the
+                # elevator a few percent against the high-alpha trim). The
+                # old "power up level first" branch here FOUGHT gravity:
+                # 280 m above target it added energy because a slow STOL
+                # never reaches 22 kt (Daniel: du hast die Gravitation
+                # vergessen). Power-for-speed belongs BELOW target only.
+                loop(0.7, label, rc_ch(thr=1000, ele=1000, arm=RC_HIGH,
                                            angle=RC_HIGH), print_every=2)
             else:
                 loop(0.7, label, rc_ch(thr=max(1000, thrL - 200), ele=1300,
