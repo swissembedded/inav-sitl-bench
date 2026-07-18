@@ -100,6 +100,10 @@ def provision():
     msp.set_setting("acczero_z", struct.pack("<h", 1))
     msp.set_setting("pitot_hardware", struct.pack("<B", 0))   # NONE
     msp.enable_feature(1 << 7)                                # FEATURE_GPS (HITL injection)
+    # the whole aerobatics suite is runtime-gated now (FW_LAUNCH pattern,
+    # default OFF upstream): without this bit none of the OHOLD boxes
+    # exist and every figure flight would silently fly bare ANGLE
+    msp.enable_feature(1 << 5)                                # FEATURE_FW_AEROBATICS
     # provider MSP is driver-based: gpsInit() keeps the feature alive without
     # a serial port (any other provider clears FEATURE_GPS at boot on SITL)
     msp.set_setting("gps_provider", struct.pack("<B", 1))
