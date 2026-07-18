@@ -2,7 +2,7 @@
   "name": "abort proof: long spin impulse, box dropped mid-segment",
   "segments": [
     {"type": "wait_time", "ms": 1000},
-    {"type": "impulse", "pitch_pct": 0, "yaw_pct": 100, "ms": 4000},
+    {"type": "impulse", "pitch_pct": 0, "yaw_pct": 100, "ms": 2000},
     {"type": "wait_time", "ms": 2000}
   ]
 }

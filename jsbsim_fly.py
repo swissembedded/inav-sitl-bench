@@ -930,7 +930,11 @@ elif MAN == "show":
         # speed to dissipate, an idle nose-down bleed only eats the altitude
         # margin the recovery just saved (measured: bf109 down to 12.9 m)
         loop(4, "rud-release", rc_ch(thr=thrL, arm=RC_HIGH, angle=1375), print_every=0.7)
-        loop(3, "exit", rc_ch(thr=thrL, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
+        # exit BELOW trim: the spin ends slow and high, and a draggy STOL
+        # at thrL climbs right back over the ceiling on the way out
+        # (timber: 122.1 -> 123.1 in the exit, breaking the descent
+        # corridor). Not idle - the bf109 lesson (down to 12.9 m) holds.
+        loop(3, "exit", rc_ch(thr=max(1000, thrL - 120), arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
 
     def _fig_hang():
         # the pull converts the base-line speed to height (v^2/2g plus the
@@ -1021,7 +1025,9 @@ elif MAN == "show":
     # with a fresh aileron blip and closes the show level.
     loop(10, "orbit", rc_ch(thr=thrL, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
     loop(1, "takeover", rc_ch(thr=thrL, ail=1700, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
-    loop(5, "level-out", rc_ch(thr=thrL, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
+    # BELOW trim: released at the orbit's energy, a hot airframe at thrL
+    # zooms out of the 122 ceiling (a10: 134 m, vampire: 122.1 measured)
+    loop(5, "level-out", rc_ch(thr=max(1000, thrL - 120), arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
 elif MAN == "gyro_tip":
     # THE TIP-OVER PAIR (floor_dive contrast pattern, Daniel's spec): slow
     # flight starves the rotor - rpm decays with the inflow, the lateral

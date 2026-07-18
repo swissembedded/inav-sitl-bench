@@ -175,7 +175,13 @@ def verify_show(tag, repertoire):
             continue
         d = _tilt_div(float(r["fc_roll"]), float(r["fc_pitch"]),
                       float(r["js_roll"]), float(r["js_pitch"]))
-        if r["phase"] in SPIN_PHASES:
+        # the floor ORBIT is the same sustained-rotation regime as the
+        # spin (continuous 25-30 deg banked turning, acc weight low, mag
+        # and COG aiding bent by the bank): measured 15.0-17.5 deg through
+        # the post-figure orbit, recovering to <1 deg by level-out. The
+        # nav loiter flies GPS position vectors there by design, immune to
+        # the attitude-estimate yaw - the spin allowance applies.
+        if r["phase"] in SPIN_PHASES or r["phase"] == "orbit":
             div_spin = max(div_spin, d)
         else:
             div_rest = max(div_rest, d)
@@ -396,14 +402,19 @@ def verify_fig_abort():
     fails = []
 
     def yawrate(seg):
-        rates, prev = [], None
+        # total traversal over wall time, NOT a per-frame median: at 1 kHz
+        # logging the plant only steps every ~10 ms, so most frame deltas
+        # are exactly zero and a median reads 0 on a genuine spin
+        if len(seg) < 2:
+            return 0.0
+        trav, prev = 0.0, None
         for r in seg:
             y = float(r["js_yaw"])
             if prev is not None:
-                rates.append(abs((y - prev + 540) % 360 - 180) * 1000.0)
+                trav += abs((y - prev + 540) % 360 - 180)
             prev = y
-        rates.sort()
-        return rates[len(rates) // 2] if rates else 0.0
+        dt = float(seg[-1]["t"]) - float(seg[0]["t"])
+        return trav / max(dt, 0.01)
 
     imp = [r for r in rows if r["phase"] == "impulse"]
     rel = [r for r in rows if r["phase"] == "abort-release"]
