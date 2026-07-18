@@ -87,11 +87,19 @@ def pack_request(acc_mg: tuple[int, int, int],
         flags |= HITL_AIRSPEED
     p = struct.pack("<BH", 3, flags)
     if gps is not None:
+        # clamp to wire ranges: ground-impact wreck physics ramp the plant
+        # velocities to absurd values (documented 9e15) and a struct.error
+        # here killed the flight script mid-impact instead of letting it
+        # end and record - a saturated sample is what a real receiver sends
+        def _i16(v): return max(-32768, min(32767, int(v)))
+        def _i32(v): return max(-2**31, min(2**31 - 1, int(v)))
         p += struct.pack("<BBiiihhhhh",
                          gps.get("fixType", 2),          # GPS_FIX_3D == 2
                          gps.get("numSat", 12),
-                         gps["lat_e7"], gps["lon_e7"], gps["alt_cm"],
-                         gps["speed_cms"], gps["course_dd"], *gps["vel_ned_cms"])
+                         _i32(gps["lat_e7"]), _i32(gps["lon_e7"]),
+                         _i32(gps["alt_cm"]),
+                         _i16(gps["speed_cms"]), _i16(gps["course_dd"]),
+                         *[_i16(v) for v in gps["vel_ned_cms"]])
     else:
         p += struct.pack("<BBiiihhhhh", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)   # GPS block, unused
     p += struct.pack("<hhh", 0, 0, 0)                               # euler att, unused (HITL_USE_IMU)

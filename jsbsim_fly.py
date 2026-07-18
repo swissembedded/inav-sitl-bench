@@ -132,7 +132,10 @@ if "--model" in sys.argv:
 # An override is available: --start-m <metres>.
 _M2FT = 3.281
 _START_M = {
-    "flat_spin": 108, "inv_spin": 104, "knife_spin": 104,
+    # knife_spin 140: the knife-edge spin sinks ~8 m/s (fuselage lift
+    # only) - at 104 the release ran out of sky (measured: impact during
+    # rud-release, alt 27->2 through the spin phases)
+    "flat_spin": 108, "inv_spin": 104, "knife_spin": 140,
     "inverted": 104, "inverted_stick": 96, "knife_left": 103, "knife_right": 102,
     "hang": 68, "hang_tvc": 40, "loop_fig": 68, "roll_hold": 104,
     "crash_test": 104, "snap_neg": 104,
