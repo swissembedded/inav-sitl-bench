@@ -85,7 +85,10 @@ def provision():
     msp.set_setting("small_angle", struct.pack("<B", 180))
     msp.set_setting("baro_hardware", struct.pack("<B", 12))    # FAKE; cal runs on the injected
                                                                # pressure once HITL streams
-    msp.set_setting("mag_hardware", struct.pack("<B", 0))      # NONE
+    # FAKE mag: the HITL stream injects the truth field (original sensor
+    # concept: GPS + mag + baro / acc + gyro, with GPS dropouts and mag
+    # disturbances as first-class citizens) - yaw becomes observable
+    msp.set_setting("mag_hardware", struct.pack("<B", 16))     # FAKE
     # skip boot gyro + gravity calibration (no real sensors behind the HITL
     # injection on SITL, the calibration FSMs would never complete)
     msp.set_setting("init_gyro_cal", struct.pack("<B", 0))

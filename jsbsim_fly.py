@@ -101,14 +101,17 @@ def fc_att(m):
 m = MspClient()
 # positional args, skipping option values (--set name=value)
 def _positional(argv):
-    out, skip = [], False
+    out, skip = [], 0
     for a in argv:
         if skip:
-            skip = False
+            skip -= 1
             continue
         if a in ("--set", "--imu-offset", "--model", "--start-m", "--gust-dir", "--thr", "--thr-scale"):
-            # (--floor is a bare flag, no value to skip)
-            skip = True
+            # (--floor/--gps/--mag are bare flags, no value to skip)
+            skip = 1
+            continue
+        if a == "--mag-glitch":
+            skip = 2
             continue
         if not a.startswith("--"):
             out.append(a)
@@ -150,6 +153,22 @@ for _i, _a in enumerate(sys.argv):
 # every phase. Any maneuver that descends through the net must be caught;
 # the batch gate calls a miss below 20 m.
 FLOOR_ON = "--floor" in sys.argv or _man == "show"   # show: net always on
+# Sensor suite (the original concept: GPS + mag + baro / acc + gyro, with
+# GPS dropouts and mag disturbances as first-class citizens):
+#   --gps        truth GPS every frame
+#   --gps-real   adds the receiver reality: beyond 60 deg tilt the antenna
+#                loses the sky (fix drops), reacquire ~2 s after leveling
+#   --mag        truth magnetometer from the plant attitude
+#   --mag-glitch <t0> <dur>  mag failure window (all-zero readings, the
+#                FW's documented failure convention)
+GPS_ON = "--gps" in sys.argv or "--gps-real" in sys.argv
+GPS_REAL = "--gps-real" in sys.argv
+MAG_ON = "--mag" in sys.argv
+_MAG_GLITCH = None
+if "--mag-glitch" in sys.argv:
+    _i = sys.argv.index("--mag-glitch")
+    _MAG_GLITCH = (float(sys.argv[_i + 1]), float(sys.argv[_i + 2]))
+_gps_lock = [True, -10.0]   # [locked, time the outage condition began/ended]
 _CLIMB_TARGET_M = _start_m
 if FLOOR_ON and not _man.startswith("floor"):
     _start_m = 25.0
@@ -167,13 +186,14 @@ log = open(f"jsbsim_log_{_man}.csv", "w")
 log.write("t,phase,mode,fc_roll,fc_pitch,fc_yaw,js_roll,js_pitch,js_yaw,ias,alt,"
           "ail,ele,rud,thr,fc_thr,st_ail,st_ele,st_thr,st_rud,"
           "st_arm,st_angle,st_inv,st_sel,fc_alt,tvc_p,tvc_y,x,y,gps_fix,gps_sat,flap,"
-          "safety\n")
+          "safety,accw\n")
 BOXIDS = read_boxids(m)
 _mode_cache = ["DISARMED", 0.0]     # [last mode string, last poll wall-time]
 _alt_cache = [0.0]                  # last FC-measured altitude
 _safety_cache = [0]                 # FW safety word (debug slot 7): bit0
                                     # floor armed, bit1 floor recovery,
                                     # bit2 rotor guard recovery
+_accw_cache = [1000]                # FW effective acc weight (slot 6), 1000 = full
 _gps_cache = [0, 0]                 # [fixType, numSat] from MSP_RAW_GPS
 _div_max = [0.0, 0.0, ""]           # [max FC-vs-truth tilt divergence, time, phase]
 
@@ -266,12 +286,35 @@ def loop(secs, phase, rc, thr_override=None, print_every=1.0, freeze=False, gps=
             _step = _THR_SLEW_US_PER_S * DT
             _thr_sent[0] += max(-_step, min(_step, rc[2] - _thr_sent[0]))
             rc_sent = rc[:2] + [int(round(_thr_sent[0]))] + rc[3:]
-        # NOTE: no GPS injection for now. Injecting our GPS (even only while
-        # upright) biases the AHRS pitch via the COG/vel fusion -- revisit
-        # together with the lock-quality-gated altitude-source feature.
-        r = sim_step(m, plant.acc_mg(), plant.gyro_dps16(), rc_sent, baro_pa=plant.baro_pa(), gps=gps)
+        # GPS: off by default (the historical finding: injecting GPS biased
+        # the AHRS pitch via the COG/vel fusion at aerobatic attitudes).
+        # --gps streams the plant's TRUTH GPS every frame - the measurement
+        # rig for exactly that finding and for the fusion-gate work (#5).
+        if GPS_ON and gps is None:
+            gps = plant.gps()
+            if GPS_REAL:
+                _tn = _frames[0] * DT
+                _jr, _jp, _ = plant.rpy()
+                _tilted = (abs(_jr) > 60 or abs(_jp) > 60)
+                if _tilted:
+                    _gps_lock[0] = False
+                    _gps_lock[1] = _tn
+                elif not _gps_lock[0] and _tn - _gps_lock[1] > 2.0:
+                    _gps_lock[0] = True
+                if not _gps_lock[0]:
+                    gps = dict(gps, fixType=0, numSat=0)
+        _mag = (0, 0, 0)
+        if MAG_ON:
+            _mag = plant.mag_bf()
+            if _MAG_GLITCH:
+                _tn = _frames[0] * DT
+                if _MAG_GLITCH[0] <= _tn < _MAG_GLITCH[0] + _MAG_GLITCH[1]:
+                    _mag = (0, 0, 0)
+        r = sim_step(m, plant.acc_mg(), plant.gyro_dps16(), rc_sent, baro_pa=plant.baro_pa(), gps=gps, mag=_mag)
         if r.debug[0] == 7:            # FW safety word cycles in slot 7
             _safety_cache[0] = r.debug[1]
+        elif r.debug[0] == 6:          # FW effective acc weight
+            _accw_cache[0] = r.debug[1]
         t_msp = time.perf_counter()
         ail = -r.stab_roll if FLIP_AIL else r.stab_roll
         ele = -r.stab_pitch if FLIP_ELE else r.stab_pitch
@@ -339,7 +382,7 @@ def loop(secs, phase, rc, thr_override=None, print_every=1.0, freeze=False, gps=
                   f"{rc_sent[0]},{rc_sent[1]},{rc_sent[2]},{rc_sent[3]},{rc_sent[4]},{rc_sent[5]},{rc_sent[6]},{rc_sent[7]},"
                   f"{_alt_cache[0]:.1f},{tvcp:.2f},{tvcy:.2f},{plant.xy()[0]:.1f},{plant.xy()[1]:.1f},"
                   f"{_gps_cache[0]},{_gps_cache[1]},{getattr(plant, '_flap_pos', 0.0):.2f},"
-                  f"{_safety_cache[0]}\n")
+                  f"{_safety_cache[0]},{_accw_cache[0]}\n")
         if time.time() - last > print_every:
             print(f"  [{phase:7}] FC {fr:+7.1f}/{fp:+6.1f}/{fy:3.0f} | JS {jr:+7.1f}/{jp:+6.1f}/{jy:5.1f} | "
                   f"IAS {plant.ias_kts():3.0f} alt {plant.z:5.0f} ele {ele:+.2f}")

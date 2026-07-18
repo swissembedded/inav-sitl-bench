@@ -178,6 +178,27 @@ class JSBSimPlant:
         return ((f["position/lat-gc-deg"] - la0) * 111320.0,
                 (f["position/long-gc-deg"] - lo0) * 111320.0 * _m.cos(_m.radians(la0)))
 
+    def mag_bf(self):
+        # truth magnetometer: the earth field (CH-like inclination 63 deg,
+        # declination ignored) rotated into the body frame. Full scale
+        # 16000 -> 800 FW units; the FW uses direction only. Mag FAILURE
+        # is all-zeros by FW convention (fc_msp simulator path).
+        import math as _m
+        r = self.fdm["attitude/phi-rad"]
+        p = self.fdm["attitude/theta-rad"]
+        y = self.fdm["attitude/psi-rad"]
+        F = (16000.0 * _m.cos(_m.radians(63)), 0.0,
+             16000.0 * _m.sin(_m.radians(63)))          # NED earth field
+        cr, sr = _m.cos(r), _m.sin(r)
+        cp, sp = _m.cos(p), _m.sin(p)
+        cy, sy = _m.cos(y), _m.sin(y)
+        bx = cp * cy * F[0] + cp * sy * F[1] - sp * F[2]
+        by = ((sr * sp * cy - cr * sy) * F[0]
+              + (sr * sp * sy + cr * cy) * F[1] + sr * cp * F[2])
+        bz = ((cr * sp * cy + sr * sy) * F[0]
+              + (cr * sp * sy - sr * cy) * F[1] + cr * cp * F[2])
+        return (int(bx), int(by), int(bz))
+
     # The nozzle actuator is the SAME servo class as the surfaces, geared
     # down: the full servo travel maps to the +-15 deg nozzle range, so in
     # PWM/normalized terms the nozzle slews exactly like a surface - full
