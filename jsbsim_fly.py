@@ -1023,19 +1023,30 @@ elif MAN == "show":
     # it climbs to the floor and ORBITS the breach point until the pilot
     # acts. Show the ring, then the pilot collects themselves, takes over
     # with a fresh aileron blip and closes the show level.
-    # orbit dwell with pilot energy management: under a DEGRADED orbit
-    # (constant bank, pitch capped at -5 on the safe side) a hot jet at
-    # trim throttle rides the circle upward and out of the arena (a10:
-    # through 106 m, release zooming to 127) - power back when it climbs.
-    # Throttle is not a takeover channel, the orbit stays engaged.
+    # orbit dwell. BOTH orbit forms hold their ENTRY altitude, they never
+    # descend to floor + margin on their own: the nav poshold manages
+    # altitude by pilot rate input (centered stick = hold here, the
+    # asserted anchor z is overridden), the degraded form is pitch-capped
+    # at -5. Riding high is the safe side - a hot jet carries the catch
+    # momentum up (a10: orbit entered at 84, rode to 110, via nav). The
+    # throttle-back below matters only for the degraded form (under the
+    # nav loiter the FW owns the throttle); it is kept because throttle
+    # is not a takeover channel and it costs nothing.
     _t0o = _frames[0]
     while (_frames[0] - _t0o) * DT < 10:
         loop(0.5, "orbit", rc_ch(thr=(1150 if plant.z > 90 else thrL),
                                  arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
     loop(1, "takeover", rc_ch(thr=thrL, ail=1700, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
     # BELOW trim: released at the orbit's energy, a hot airframe at thrL
-    # zooms out of the 122 ceiling (a10: 134 m, vampire: 122.1 measured)
-    loop(5, "level-out", rc_ch(thr=max(1000, thrL - 120), arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
+    # zooms out of the 122 ceiling (a10: 134 m, vampire: 122.1 measured).
+    # From a HIGH-riding orbit the close also descends back toward the
+    # arena (gentle down-elevator; a10 still climbed 113 -> 126 level) -
+    # from the floor band it just flies level, unchanged.
+    if plant.z > 100:
+        loop(5, "level-out", rc_ch(thr=max(1000, thrL - 120), ele=1350,
+                                   arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
+    else:
+        loop(5, "level-out", rc_ch(thr=max(1000, thrL - 120), arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
 elif MAN == "gyro_tip":
     # THE TIP-OVER PAIR (floor_dive contrast pattern, Daniel's spec): slow
     # flight starves the rotor - rpm decays with the inflow, the lateral
