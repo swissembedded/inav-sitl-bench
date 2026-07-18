@@ -111,6 +111,10 @@ def provision():
     # wave. R = v^2 / (g * tan(bank)): 25 m/s at a comfortable 25 deg
     # -> ~150 m).
     msp.set_setting("nav_fw_loiter_radius", struct.pack("<H", 15000))
+    # crash detection is an explicit opt-in in the firmware (default OFF
+    # upstream); the bench declares it ON so crash_test/snap_neg judge
+    # the real detector, not the default
+    msp.set_setting("crash_detection", struct.pack("<B", 1))
     # provider MSP is driver-based: gpsInit() keeps the feature alive without
     # a serial port (any other provider clears FEATURE_GPS at boot on SITL)
     msp.set_setting("gps_provider", struct.pack("<B", 1))

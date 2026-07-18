@@ -119,22 +119,36 @@ FLOOR switch is on for the entire flight. Sensor suite: GPS + magnetometer
   IMPULSE is running and the pilot drops the F SEQ box mid-segment. The
   open-loop command dies with the box (no stale rates), and the held
   dive afterwards proves the altitude floor still owns the recovery.
+- `jsbsim_crash_test.mp4` - crash detection positive path: impact spike
+  near the accelerometer full-scale, then the airframe lies still - the
+  motor cuts ~1.5 s later while staying armed; the throttle down-up
+  gesture re-allows short locator bursts.
+- `jsbsim_snap_neg.mp4` - crash detection negative proof: a violent snap
+  figure spikes the same accelerometer, but no stillness follows - the
+  motor must NOT cut mid-air.
 
-## Safety floor demos (breakthrough law)
+## Safety floor demos (breakthrough law + latch)
 
 Flown under the current floor law: the recovery engages when the
 aircraft BREAKS THROUGH the line while sinking - no prediction, a
-piloted trajectory is not predictable. The pilot overrides with fresh
-stick input; all three end with the catch climbing out.
+piloted trajectory is not predictable. A catch does not hand back by
+itself: the aircraft climbs back to the floor and ORBITS the breach
+point (the real nav loiter with a healthy position estimate, a
+constant-bank circle as the degraded form) until the pilot takes over
+with a fresh roll/pitch input after centered sticks. A mode interrupted
+by the catch stays LATCHED out until its switch is cycled.
 
 - `jsbsim_floor_dive.mp4` - held dive into the floor, caught and leveled
-  AGAINST the held stick; then the same dive with the floor off punches
-  through.
+  AGAINST the held stick (the re-breach guard keeps dropping the orbit
+  back to the aggressive climb); then the same dive with the floor off
+  punches through.
 - `jsbsim_floor_panic.mp4` - the panic case: throttle chopped, down
   elevator held - the catch brings its own climb throttle and suppresses
-  the held stick.
-- `jsbsim_floor_spin.mp4` - flat spin into the floor: the recovery
-  overrides the spin, rolls upright out of the rotation and climbs out.
+  the held stick; a fresh deflection after centering releases it.
+- `jsbsim_floor_spin.mp4` - flat spin into the floor with the FSPIN box
+  FORGOTTEN: the catch overrides the spin, latches the box out, climbs
+  and orbits the breach point for a full minute untouched; the pilot's
+  aileron blip takes over and the latched spin must not restart.
 
 ## Figure sequencer routines (F SEQ box)
 
