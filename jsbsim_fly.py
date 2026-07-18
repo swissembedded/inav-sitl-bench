@@ -162,11 +162,24 @@ FLOOR_ON = "--floor" in sys.argv or _man == "show"   # show: net always on
 #   --gps        truth GPS every frame
 #   --gps-real   adds the receiver reality: beyond 60 deg tilt the antenna
 #                loses the sky (fix drops), reacquire ~2 s after leveling
+#   --gps-falsevalid  the DANGEROUS receiver reality (GNSS handover): a
+#                shaded M10-class receiver does NOT drop the fix - its
+#                internal filter coasts 1-2 s with fixType 3 while the
+#                velocity is already stale. Model: on shading, position
+#                coasts along the last-good velocity (decaying tau 1.2 s),
+#                numSat sags 12->8 after 0.8 s (trips the +2-sats Z gate),
+#                honest full loss only after 1.8 s; reacquire 0.7 s after
+#                leveling SNAPS back to truth - the position jump is the
+#                innovation the residual gate must absorb.
 #   --mag        truth magnetometer from the plant attitude
 #   --mag-glitch <t0> <dur>  mag failure window (all-zero readings, the
 #                FW's documented failure convention)
-GPS_ON = "--gps" in sys.argv or "--gps-real" in sys.argv
+GPS_ON = ("--gps" in sys.argv or "--gps-real" in sys.argv
+          or "--gps-falsevalid" in sys.argv)
 GPS_REAL = "--gps-real" in sys.argv
+GPS_FALSEVALID = "--gps-falsevalid" in sys.argv
+if GPS_REAL and GPS_FALSEVALID:
+    raise SystemExit("--gps-real and --gps-falsevalid are mutually exclusive")
 MAG_ON = "--mag" in sys.argv
 PITOT_ON = "--pitot" in sys.argv   # inject truth airspeed (pitot-equipped airframes)
 _MAG_GLITCH = None
@@ -174,6 +187,10 @@ if "--mag-glitch" in sys.argv:
     _i = sys.argv.index("--mag-glitch")
     _MAG_GLITCH = (float(sys.argv[_i + 1]), float(sys.argv[_i + 2]))
 _gps_lock = [True, -10.0]   # [locked, time the outage condition began/ended]
+# false-valid coast state: None = healthy; else dict with the receiver's
+# internal (coasted) solution in wire units + the shade/unshade clocks
+_gps_fv = {"shaded_since": None, "unshaded_since": None, "coast": None}
+_gps_origin = [None, None]   # first-frame lat_e7/lon_e7 for meter logging
 _CLIMB_TARGET_M = _start_m
 if FLOOR_ON and not _man.startswith("floor"):
     _start_m = 25.0
@@ -191,7 +208,8 @@ log = open(f"jsbsim_log_{_man}.csv", "w")
 log.write("t,phase,mode,fc_roll,fc_pitch,fc_yaw,js_roll,js_pitch,js_yaw,ias,alt,"
           "ail,ele,rud,thr,fc_thr,st_ail,st_ele,st_thr,st_rud,"
           "st_arm,st_angle,st_inv,st_sel,fc_alt,tvc_p,tvc_y,x,y,gps_fix,gps_sat,flap,"
-          "safety,accw,inj_baro_pa,inj_gps_alt\n")
+          "safety,accw,inj_baro_pa,inj_gps_alt,"
+          "inj_gps_x,inj_gps_y,inj_gps_vn,inj_gps_ve\n")
 BOXIDS = read_boxids(m)
 _mode_cache = ["DISARMED", 0.0]     # [last mode string, last poll wall-time]
 _alt_cache = [0.0]                  # last FC-measured altitude
@@ -310,6 +328,75 @@ def loop(secs, phase, rc, thr_override=None, print_every=1.0, freeze=False, gps=
                     _gps_lock[0] = True
                 if not _gps_lock[0]:
                     gps_frame = dict(gps_frame, fixType=0, numSat=0)
+            elif GPS_FALSEVALID:
+                # the dangerous case (GNSS handover): the shaded receiver
+                # keeps reporting fixType 3 while its internal filter
+                # coasts - position rides the last-good velocity (decay
+                # tau 1.2 s), numSat sags after 0.8 s, honest loss only
+                # after 1.8 s, reacquisition SNAPS to truth (the jump is
+                # the innovation the residual gate must absorb)
+                _tn = _frames[0] * DT
+                _jr, _jp, _ = plant.rpy()
+                _tilted = (abs(_jr) > 60 or abs(_jp) > 60)
+                if _tilted:
+                    _gps_fv["unshaded_since"] = None
+                    if _gps_fv["shaded_since"] is None:
+                        _gps_fv["shaded_since"] = _tn
+                        _gps_fv["coast"] = {
+                            "lat": float(gps_frame["lat_e7"]),
+                            "lon": float(gps_frame["lon_e7"]),
+                            "alt": float(gps_frame["alt_cm"]),
+                            "vn": gps_frame["vel_ned_cms"][0] / 100.0,
+                            "ve": gps_frame["vel_ned_cms"][1] / 100.0,
+                            "vd": gps_frame["vel_ned_cms"][2] / 100.0}
+                else:
+                    if (_gps_fv["shaded_since"] is not None
+                            and _gps_fv["unshaded_since"] is None):
+                        _gps_fv["unshaded_since"] = _tn
+                    if (_gps_fv["unshaded_since"] is not None
+                            and _tn - _gps_fv["unshaded_since"] > 0.7):
+                        _gps_fv["shaded_since"] = None
+                        _gps_fv["coast"] = None
+                if _gps_fv["shaded_since"] is not None:
+                    _shade_t = _tn - _gps_fv["shaded_since"]
+                    _c = _gps_fv["coast"]
+                    _dec = math.exp(-DT / 1.2)
+                    _c["vn"] *= _dec; _c["ve"] *= _dec; _c["vd"] *= _dec
+                    _c["lat"] += _c["vn"] * DT / 111320.0 * 1e7
+                    _c["lon"] += (_c["ve"] * DT
+                                  / (111320.0 * max(0.2, math.cos(
+                                        math.radians(_c["lat"] / 1e7)))) * 1e7)
+                    _c["alt"] -= _c["vd"] * DT * 100.0
+                    if _shade_t > 1.8:
+                        gps_frame = dict(gps_frame, fixType=0, numSat=0)
+                    else:
+                        _spd = math.hypot(_c["vn"], _c["ve"])
+                        _crs = int(round(math.degrees(math.atan2(
+                            _c["ve"], _c["vn"])) % 360.0 * 10)) % 3600
+                        gps_frame = dict(
+                            gps_frame, fixType=3,
+                            numSat=(12 if _shade_t < 0.8 else 8),
+                            lat_e7=int(round(_c["lat"])),
+                            lon_e7=int(round(_c["lon"])),
+                            alt_cm=int(round(_c["alt"])),
+                            speed_cms=int(round(_spd * 100.0)),
+                            course_dd=_crs,
+                            vel_ned_cms=(int(round(_c["vn"] * 100.0)),
+                                         int(round(_c["ve"] * 100.0)),
+                                         int(round(_c["vd"] * 100.0))))
+        # injected-GPS residual logging (meters relative to the first GPS
+        # frame, matching the plant x/y convention) - the measurement the
+        # residual-gate parameters will be set from
+        _inj_x = _inj_y = _inj_vn = _inj_ve = ""
+        if gps_frame:
+            if _gps_origin[0] is None:
+                _gps_origin[0] = gps_frame["lat_e7"]
+                _gps_origin[1] = gps_frame["lon_e7"]
+            _clat = math.cos(math.radians(gps_frame["lat_e7"] / 1e7))
+            _inj_x = f"{(gps_frame['lat_e7'] - _gps_origin[0]) / 1e7 * 111320.0:.2f}"
+            _inj_y = f"{(gps_frame['lon_e7'] - _gps_origin[1]) / 1e7 * 111320.0 * _clat:.2f}"
+            _inj_vn = f"{gps_frame['vel_ned_cms'][0] / 100.0:.2f}"
+            _inj_ve = f"{gps_frame['vel_ned_cms'][1] / 100.0:.2f}"
         _mag = (0, 0, 0)
         if MAG_ON:
             _mag = plant.mag_bf()
@@ -393,7 +480,8 @@ def loop(secs, phase, rc, thr_override=None, print_every=1.0, freeze=False, gps=
                   f"{_alt_cache[0]:.1f},{tvcp:.2f},{tvcy:.2f},{plant.xy()[0]:.1f},{plant.xy()[1]:.1f},"
                   f"{_gps_cache[0]},{_gps_cache[1]},{getattr(plant, '_flap_pos', 0.0):.2f},"
                   f"{_safety_cache[0]},{_accw_cache[0]},{_baro_pa},"
-                  f"{gps_frame['alt_cm'] if gps_frame else ''}\n")
+                  f"{gps_frame['alt_cm'] if gps_frame else ''},"
+                  f"{_inj_x},{_inj_y},{_inj_vn},{_inj_ve}\n")
         if time.time() - last > print_every:
             print(f"  [{phase:7}] FC {fr:+7.1f}/{fp:+6.1f}/{fy:3.0f} | JS {jr:+7.1f}/{jp:+6.1f}/{jy:5.1f} | "
                   f"IAS {plant.ias_kts():3.0f} alt {plant.z:5.0f} ele {ele:+.2f}")
@@ -535,8 +623,10 @@ elif MAN == "fig_abort":
     # box - on the buggy binary the latched flag kept commanding full yaw
     # rate ahead of any recovery. Afterwards a held dive proves the floor
     # catch still owns the aircraft.
-    loop(2, "figseq", rc_ch(thr=1650, arm=RC_HIGH, angle=1675), print_every=0.7)
-    loop(1, "impulse", rc_ch(thr=1650, arm=RC_HIGH, angle=1675), print_every=0.7)
+    # sequence: wait 1000 ms, impulse 2000 ms (compiler max) - the abort
+    # at 2.2 s lands mid-impulse
+    loop(1.5, "figseq", rc_ch(thr=1650, arm=RC_HIGH, angle=1675), print_every=0.7)
+    loop(0.7, "impulse", rc_ch(thr=1650, arm=RC_HIGH, angle=1675), print_every=0.7)
     loop(4, "abort-release", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH),
          print_every=0.7)
     _t0 = _frames[0]
