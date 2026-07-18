@@ -768,7 +768,17 @@ elif MAN == "show":
         loop(10, "harrier", rc_ch(thr=max(1100, thrL - 150), ele=1900, arm=RC_HIGH,
                                   angle=RC_HIGH), print_every=0.7)
         plant.set_flaps(0.0)
-        loop(4, "exit", rc_ch(thr=thrL, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
+        # break the powered mush BEFORE handing back: the harrier
+        # equilibrium is stable at trim throttle - the prop wash carries
+        # the wing at high alpha and _to_alt's power-up guard then FEEDS
+        # it (measured: 60 s mush-climb to 341 m, ias pinned at 21 kt,
+        # AHRS healthy, ANGLE elevator authorityless). Idle removes the
+        # wash, nose-down drops the nose, gravity buys the speed back.
+        _t0 = _frames[0]
+        while plant.ias_kts() < 30 and (_frames[0] - _t0) * DT < 8:
+            loop(0.7, "exit", rc_ch(thr=1100, ele=1250, arm=RC_HIGH,
+                                    angle=RC_HIGH), print_every=2)
+        loop(3, "exit", rc_ch(thr=thrL, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
 
     def _fig_flaps_slow():
         # full flaps, reduced power: the slow pass (a10/binary class)
@@ -822,27 +832,41 @@ elif MAN == "gyro_tip":
     # excursion - wings level, nose down, throttle floor - because thrust
     # is the only lever that restores inflow -> rpm -> authority.
     GUARD = "--guard" in sys.argv
-    _sel = 1900 if GUARD else RC_LOW
+    LAND = "--land" in sys.argv
+    _sel = 1900 if (GUARD or LAND) else RC_LOW
     with open(f"jsbsim_params_{_man}.txt", "a") as _pf:
         _pf.write(f"model={_model}\n")
-    print(f"=== GYRO TIP ({'WITH' if GUARD else 'WITHOUT'} rotor guard) ===")
-    # healthy entry: enough throttle that the rotor sits ABOVE the stall
-    # band before the starving begins - the story arc needs a clean start
-    loop(6, "cruise", rc_ch(thr=1700, arm=RC_HIGH, angle=RC_HIGH, sel=_sel),
-         print_every=0.7)
-    # starve the rotor: near-idle, ANGLE holds level while the speed and
-    # with it the rotor rpm bleed away - the tip-over regime from the
-    # research (and the plant's measured rpm decay)
-    loop(14, "slow-decay", rc_ch(thr=1120, arm=RC_HIGH, angle=RC_HIGH, sel=_sel),
-         print_every=0.7)
-    loop(5, "tip-window", rc_ch(thr=1120, arm=RC_HIGH, angle=RC_HIGH, sel=_sel),
-         print_every=0.7)
-    # aftermath: without the guard this is wreckage by now; with it the
-    # guard has caught every excursion (twice from 80 m) and the pilot
-    # giving the throttle back gets a FLYING aircraft - 1700 is the
-    # cruise value that holds level, the story must end airborne
-    loop(10, "after", rc_ch(thr=1700, arm=RC_HIGH, angle=RC_HIGH, sel=_sel),
-         print_every=0.7)
+    print(f"=== GYRO TIP ({'WITH' if GUARD or LAND else 'WITHOUT'} rotor guard"
+          f"{', LANDING' if LAND else ''}) ===")
+    if LAND:
+        # LANDING PROOF (Daniel: "wenn ich thrust 0 mache, sollte er den
+        # thrust nicht mehr selber hochdrehen koennen"): guard box ARMED,
+        # healthy cruise, then the pilot pulls the stick to IDLE - landing
+        # intent. The rotor starves and the gyro tips, but the guard must
+        # stand down: an idle stick disables the trip and the FC throttle
+        # stays at zero even through the tip-over. The gate asserts it.
+        loop(6, "cruise", rc_ch(thr=1700, arm=RC_HIGH, angle=RC_HIGH,
+                                sel=_sel), print_every=0.7)
+        loop(19, "land-idle", rc_ch(thr=1000, arm=RC_HIGH, angle=RC_HIGH,
+                                    sel=_sel), print_every=0.7)
+    else:
+        # healthy entry: enough throttle that the rotor sits ABOVE the stall
+        # band before the starving begins - the story arc needs a clean start
+        loop(6, "cruise", rc_ch(thr=1700, arm=RC_HIGH, angle=RC_HIGH, sel=_sel),
+             print_every=0.7)
+        # starve the rotor: near-idle, ANGLE holds level while the speed and
+        # with it the rotor rpm bleed away - the tip-over regime from the
+        # research (and the plant's measured rpm decay)
+        loop(14, "slow-decay", rc_ch(thr=1120, arm=RC_HIGH, angle=RC_HIGH, sel=_sel),
+             print_every=0.7)
+        loop(5, "tip-window", rc_ch(thr=1120, arm=RC_HIGH, angle=RC_HIGH, sel=_sel),
+             print_every=0.7)
+        # aftermath: without the guard this is wreckage by now; with it the
+        # guard has caught every excursion (twice from 80 m) and the pilot
+        # giving the throttle back gets a FLYING aircraft - 1700 is the
+        # cruise value that holds level, the story must end airborne
+        loop(10, "after", rc_ch(thr=1700, arm=RC_HIGH, angle=RC_HIGH, sel=_sel),
+             print_every=0.7)
 elif MAN == "inverted_stick":
     # ANGLE-semantics stick offsets: half aileron must carve a HELD angle
     # offset from the inverted reference (not a rate), releasing returns
