@@ -101,7 +101,12 @@ def provision_model(model):
     time.sleep(3)
     if os.path.exists("fcdata/eeprom.bin"):
         shutil.copy("fcdata/eeprom.bin", f"eeprom_{model}.bin")
-        print(f"-> eeprom_{model}.bin")
+        # completion marker: a provisioning killed mid-way leaves a HALF
+        # image, and restoring one flew the timber with a broken config
+        # to 314 m (measured) - only marker-verified images get restored
+        with open(f"eeprom_{model}.bin.ok", "w") as fh:
+            fh.write("complete\n")
+        print(f"-> eeprom_{model}.bin (+marker)")
 
 
 def main():
