@@ -139,9 +139,11 @@ def provision():
     msp.set_setting("fig_assist_max", struct.pack("<B", 20))
     msp.set_setting("ohold_knife_left_pitch_trim", struct.pack("<b", 7))
     msp.set_setting("ohold_knife_right_pitch_trim", struct.pack("<b", 7))
-    # BARO_ONLY: aerobatic attitudes lose GPS; stand-in for the planned
-    # lock-quality-gated auto switch (GPS only weighted in when locked)
-    msp.set_setting("inav_default_alt_sensor", struct.pack("<B", 3))
+    # altitude source stays the INAV default (GPS+baro blending): the
+    # historical BARO_ONLY pin guarded against a 72 m hang error that
+    # turned out to be a bench GPS-injection bug (stale position re-sent
+    # per phase) - with a fresh stream the default source tracks the hang
+    # at 0.1 m median / 4.5 m max (measured 2026-07-18)
     # servo output lowpass (biquad, per servo, at loop rate): smooths
     # D-term noise off the servos (wear) - Jetrell's point on the PR. 20 Hz
     # is the INAV default; pinned here so the bench validates exactly the
