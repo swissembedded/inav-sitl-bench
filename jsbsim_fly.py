@@ -143,6 +143,7 @@ _START_M = {
     "seq": 120, "seq_chain": 120,   # aerobatic routines: exempt, they climb high
     "fig_abort": 110,   # abort-proof: spin impulse up high, dive to the net after
     "circle_probe": 104,   # AHRS circle probe: steady turn, measure yaw truth
+    "pitot_probe": 104,    # pitot lever-arm probe: steady held-rudder yaw
     "poshold_probe": 104,  # vanilla NAV POSHOLD control experiment
     "show": 25,   # one-video-per-airplane: arm low, Einflug, sequence
     "gyro_tip": 80,   # autogyro tip-over pair: the T/W-0.83 gyro cannot climb
@@ -184,6 +185,17 @@ if GPS_REAL and GPS_FALSEVALID:
     raise SystemExit("--gps-real and --gps-falsevalid are mutually exclusive")
 MAG_ON = "--mag" in sys.argv
 PITOT_ON = "--pitot" in sys.argv   # inject truth airspeed (pitot-equipped airframes)
+# --pitot-lever-probe: log the corrected airspeed (MSP2_INAV_AIR_SPEED =
+# getAirspeedEstimate()) against the injected truth and the yaw rate through a
+# steady turn, to verify the pitot lever-arm correction (getAirspeedEstimate =
+# pitot + yaw_rate * pitot_lever_arm). Set the arm with --set pitot_lever_arm=N.
+PLEVER_PROBE = "--pitot-lever-probe" in sys.argv
+_plever_rows = []      # (t, ias_true_cms, yaw_dps, corrected_cms)
+_plever_last = [0.0]
+_plever_cm = 0
+for _pi, _pa in enumerate(sys.argv):
+    if _pa == "--set" and _pi + 1 < len(sys.argv) and sys.argv[_pi + 1].startswith("pitot_lever_arm="):
+        _plever_cm = int(sys.argv[_pi + 1].split("=", 1)[1])
 _MAG_GLITCH = None
 if "--mag-glitch" in sys.argv:
     _i = sys.argv.index("--mag-glitch")
@@ -461,6 +473,13 @@ def loop(secs, phase, rc, thr_override=None, print_every=1.0, freeze=False, gps=
         fr, fp, fy = r.att_roll_deg, r.att_pitch_deg, r.att_yaw_deg   # aus der Reply -- keine Extra-Roundtrips
         _frames[0] += 1
         t = _frames[0] * DT if LOCKSTEP else time.time() - T0
+        if PLEVER_PROBE and t - _plever_last[0] > 0.1:   # ~10 Hz corrected-airspeed probe
+            _plever_last[0] = t
+            try:                                          # MSP2_INAV_AIR_SPEED (0x2009) = getAirspeedEstimate() cm/s
+                _corr = struct.unpack("<I", m.request(0x2009)[:4])[0]
+                _plever_rows.append((t, plant.ias_kts() * 51.444, plant.gyro_dps16()[2] / 16.0, _corr))
+            except Exception:
+                pass
         if t - _mode_cache[1] > 0.1:             # poll real FC mode + baro alt + GPS at ~10 Hz
             _mode_cache[0] = fc_mode(m, BOXIDS)
             _alt_cache[0] = fc_alt_m(m)
@@ -572,6 +591,7 @@ MAN_RC = {   # SEL detents: 1270 INVERT / 1510 KN L / 1750 KN R / 1985 HANG
     "show":        dict(angle=RC_HIGH),               # one video per airplane:
                                                       # capability-derived sequence
     "circle_probe": dict(angle=RC_HIGH),              # AHRS circle probe
+    "pitot_probe":  dict(angle=RC_HIGH),              # pitot lever-arm probe
     "poshold_probe": dict(angle=RC_HIGH),             # vanilla LOTR control
     "gyro_tip":    dict(angle=RC_HIGH),               # autogyro tip-over pair:
                                                       # --guard adds ROTOR GUARD
@@ -644,6 +664,17 @@ elif MAN == "circle_probe":
     loop(60, "circle", rc_ch(thr=1650, arm=RC_HIGH, ail=1900, angle=RC_HIGH),
          print_every=2)
     loop(4, "level", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH), print_every=1)
+elif MAN == "pitot_probe":
+    # Pitot lever-arm probe: a steady flat turn from HELD RUDDER. In ANGLE the
+    # rudder is a direct yaw-RATE command (the free axis), so omega_z is
+    # constant and known - a held-aileron bank barely yaws the aerobat3d
+    # (circle_probe measured ~0 dps). A touch of bank keeps it coordinated.
+    loop(8, "level", rc_ch(thr=1560, arm=RC_HIGH, angle=RC_HIGH), print_every=2)
+    # gentle: a small rudder offset for a steady ~30-60 dps flat turn, NOT a
+    # departure (full rudder spun the aerobat3d at 465 dps and drove the
+    # corrected airspeed negative). A touch of bank keeps it coordinated.
+    loop(52, "yawturn", rc_ch(thr=1560, arm=RC_HIGH, ail=1600, rud=1575, angle=RC_HIGH),
+         print_every=2)
 elif MAN == "fig_abort":
     # REVIEW-FIX PROOF (figure_sequencer latched-flag bug): the sequence
     # (fig_abort_proof.json) runs a 4 s full-yaw IMPULSE; the pilot drops
@@ -1153,4 +1184,23 @@ if _prof["n"]:
     print(f"timing: {_late[0]} slots overran >5ms | per cycle: "
           f"msp {1000*_prof['msp']/_prof['n']:.1f} ms, jsbsim {1000*_prof['js']/_prof['n']:.1f} ms "
           f"(slot {DT*1000:.0f} ms)")
+if PLEVER_PROBE and _plever_rows:
+    import statistics as _st
+    _fn = f"pitot_lever_probe_{_man}.csv"
+    with open(_fn, "w") as _pf:
+        _pf.write("t,ias_true_cms,yaw_dps,corrected_cms,expected_cms,resid_cms" + chr(10))
+        for (tt, ias, yaw, corr) in _plever_rows:
+            exp = ias + math.radians(yaw) * _plever_cm      # ias + yaw_rate[rad/s]*lever[cm] = cm/s
+            _pf.write(f"{tt:.2f},{ias:.1f},{yaw:.2f},{corr},{exp:.1f},{corr-exp:.1f}" + chr(10))
+    _ss = [(ias, yaw, corr) for (tt, ias, yaw, corr) in _plever_rows
+           if tt > 15.0 and corr < 1000000]  # skip entry + any U32-wrapped (negative airspeed) sample
+    if _ss:
+        _appl = _st.mean(corr - ias for (ias, yaw, corr) in _ss)
+        _exp = _st.mean(math.radians(yaw) * _plever_cm for (ias, yaw, corr) in _ss)
+        _res = _st.mean(corr - (ias + math.radians(yaw) * _plever_cm) for (ias, yaw, corr) in _ss)
+        _yaw = _st.mean(yaw for (ias, yaw, corr) in _ss)
+        print(f"PLEVER: lever={_plever_cm}cm yaw={_yaw:+.1f}dps applied_corr={_appl:+.1f}cm/s "
+              f"expected={_exp:+.1f}cm/s resid={_res:+.1f}cm/s -> {_fn}")
+        print(f"PLEVER: correction sign {'+' if _appl > 0 else '-'} "
+              f"(inner-side + when lever and yaw have the same sign)")
 log.close(); m.close()
