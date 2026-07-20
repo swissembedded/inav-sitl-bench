@@ -458,6 +458,43 @@ def verify_gyro_land():
     return (not fails), fails
 
 
+def verify_soar():
+    """Thermal soaring proof (Daniel: motor off, ride the lift). With the
+    SOARING box engaged the FW idles the motor and the glider must CLIMB on
+    the thermal: a net altitude gain while the throttle sits at idle, never
+    sinking below the entry, the loiter staying on the drifting column, and
+    the motor RETURNING the moment SOARING is dropped (proving it was an
+    override, not a dead motor)."""
+    fails = []
+    rows = list(csv.DictReader(open("jsbsim_log_soar.csv")))
+    soar = [r for r in rows if r["phase"] == "soar"]
+    if not soar:
+        return False, ["soar: no soar phase in the log"]
+    thr = [float(r["fc_thr"]) for r in soar]
+    alt = [float(r["alt"]) for r in soar]
+    # 1. the motor is idled while thermalling
+    idle_frac = sum(1 for v in thr if v < 0.2) / len(thr)
+    if statistics.median(thr) > 0.2 or idle_frac < 0.8:
+        fails.append(f"soar: motor not idled (median thr {statistics.median(thr):.2f}, "
+                     f"{idle_frac*100:.0f}% idle) - SOARING never thermalled")
+    # 2. it CLIMBS on the idle and never sinks below where it started
+    gain = alt[-1] - alt[0]
+    if gain < 15:
+        fails.append(f"soar: no climb on the lift ({gain:+.0f} m over the phase)")
+    if min(alt) < alt[0] - 5:
+        fails.append(f"soar: sank {alt[0]-min(alt):.0f} m below the entry")
+    # 3. the loiter stays bounded near the (drifting) thermal, not a runaway
+    bx, by = float(soar[0]["x"]), float(soar[0]["y"])
+    dmax = max(((float(r["x"]) - bx) ** 2 + (float(r["y"]) - by) ** 2) ** 0.5 for r in soar)
+    if dmax > 600:
+        fails.append(f"soar: loiter ran away {dmax:.0f} m from entry (lost the thermal)")
+    # 4. the motor RETURNS when SOARING is dropped (proves it was an override)
+    ex = [float(r["fc_thr"]) for r in rows if r["phase"] == "exit"]
+    if ex and statistics.mean(ex) < 0.4:
+        fails.append(f"soar: motor did not return after exit (thr {statistics.mean(ex):.2f})")
+    return (not fails), fails
+
+
 def main():
     which = [a for a in sys.argv[1:] if a in AIRFRAMES] or [
         m for m in AIRFRAMES if AIRFRAMES[m][0] != "GYRO"]

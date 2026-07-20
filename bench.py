@@ -45,8 +45,12 @@ PERM_INVERTED, PERM_KNIFELEFT, PERM_KNIFERIGHT, PERM_PROPHANG = 69, 70, 71, 72
 PERM_ALTFLOOR = 73
 PERM_FIGROLL, PERM_FIGLOOP, PERM_FIGPOINTROLL, PERM_FIGSEQ = 74, 75, 76, 77
 PERM_FSPIN = 79
+PERM_SOARING = 56       # BOXSOARING permanentId (fc_msp_box.c) - NOT the boxId 47;
+                        # shares CH_INVERTED with ALT FLOOR but a LOW band
+                        # (1150-1400), clear of the floor's 1700-2100
 RC_ALTFLOOR_ON = 1900   # ALT FLOOR is ALONE on CH_INVERTED (1700-2100), a
                         # dedicated switch toggled independently of the flight mode
+RC_SOAR_ON    = 1275    # SOARING band on the SAME CH_INVERTED channel, low end
 RC_FSPIN_ON   = 1375    # FLAT SPIN band on the CH_ANGLE flight-mode selector
 RC_FIGLOOP_ON = 1225    # FIGURE LOOP band on the CH_ANGLE selector
 RC_FIGSEQ_ON  = 1675    # FIGURE SEQ band on the CH_ANGLE selector
@@ -146,14 +150,21 @@ def provision():
     # slot 10 MUST stay contiguous: the FC compacts the mode-range list at
     # the first gap on save, a gapped slot silently disappears after reboot
     msp.set_mode_range(10, PERM_FSPIN, CH_ANGLE - 4, 1300, 1450)
+    # slot 11: thermal SOARING on CH_INVERTED low band (1150-1400), clear of the
+    # ALT FLOOR band (1700-2100) on the same channel - soar and floor never
+    # engage together in a bench flight, and both stay armable per their band
+    msp.set_mode_range(11, PERM_SOARING, CH_INVERTED - 4, 1150, 1400)
     # tuned against the JSBSim aerobat3d plant (2026-07-10): altitude spans
     # over a 22 s figure: inverted 3.1 m, roll_hold 1.1 m, knife L/R 6 m
     # (slightly sinking, never climbing)
     msp.set_setting("fig_assist_z_gain", struct.pack("<B", 45))
     msp.set_setting("fig_assist_vz_gain", struct.pack("<B", 3))
     msp.set_setting("fig_assist_max", struct.pack("<B", 20))
-    msp.set_setting("ohold_knife_left_pitch_trim", struct.pack("<b", 7))
-    msp.set_setting("ohold_knife_right_pitch_trim", struct.pack("<b", 7))
+    # the per-regime pitch trims (knife L/R +7 here) were a pre-throttle-assist
+    # crutch for the ~6 m knife sink; they are fixed FW inits at neutral 0 now
+    # (RAUS-11 settings reduction) and no longer settable. The integrating hover
+    # throttle assist drives the knife sink to zero instead - this regression is
+    # exactly the test that neutral trims + that assist still hold the knife.
     # altitude source stays the INAV default (GPS+baro blending): the
     # historical BARO_ONLY pin guarded against a 72 m hang error that
     # turned out to be a bench GPS-injection bug (stale position re-sent

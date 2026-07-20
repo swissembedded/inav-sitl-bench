@@ -38,7 +38,7 @@ RC_LOW, RC_MID, RC_HIGH = 1000, 1500, 2000
 THR_SCALE = (float(sys.argv[sys.argv.index("--thr-scale") + 1])
              if "--thr-scale" in sys.argv else 1.0)
 # channels: A E T R ARM ANGLE INVERT SELECT  (bench provisioning layout)
-def rc_ch(thr=RC_LOW, arm=RC_LOW, angle=RC_LOW, floor=RC_LOW, sel=RC_LOW, ele=RC_MID, ail=RC_MID, rud=RC_MID):
+def rc_ch(thr=RC_LOW, arm=RC_LOW, angle=RC_LOW, floor=RC_LOW, sel=RC_LOW, ele=RC_MID, ail=RC_MID, rud=RC_MID, soar=RC_LOW):
     thr = int(round(1000 + (thr - 1000) * THR_SCALE))
     if FLOOR_ON and floor == RC_LOW:
         floor = 1900          # universal net: FLOOR switch on in every phase
@@ -46,7 +46,11 @@ def rc_ch(thr=RC_LOW, arm=RC_LOW, angle=RC_LOW, floor=RC_LOW, sel=RC_LOW, ele=RC
     #         FIGROLL 1525 / FIGSEQ 1675 / ANGLE >=1750
     # floor = FLOOR switch (CH_INVERTED), its own channel: >=1700 arms it
     # sel   = attitude-target selector (CH_SELECT): INVERT / KNIFE L/R / HANG
-    return [ail, ele, thr, rud, arm, angle, floor, sel]
+    # soar  = SOARING on the SAME CH_INVERTED channel but a LOW band (1150-1400),
+    #         clear of the floor's 1700-2100; the soar maneuver never floors, so
+    #         it wins the channel when set. (bench provisions the range at slot 11)
+    inv_ch = soar if soar != RC_LOW else floor
+    return [ail, ele, thr, rud, arm, angle, inv_ch, sel]
 
 # Real active flight mode, pulled from the FC itself (not re-derived from RC):
 # MSP_BOXIDS gives permanent box ids in active order, MSP_ACTIVEBOXES gives a
@@ -145,6 +149,8 @@ _START_M = {
     "circle_probe": 104,   # AHRS circle probe: steady turn, measure yaw truth
     "pitot_probe": 104,    # pitot lever-arm probe: steady held-rudder yaw
     "poshold_probe": 104,  # vanilla NAV POSHOLD control experiment
+    "soar": 80,   # thermal soaring: arm mid-band (inside soar_alt_min..max),
+                  # engage SOARING in the lift, climb on the updraft motor-idled
     "show": 25,   # one-video-per-airplane: arm low, Einflug, sequence
     "gyro_tip": 80,   # autogyro tip-over pair: the T/W-0.83 gyro cannot climb
                       # there itself - start high enough that TWO catch
@@ -212,6 +218,16 @@ if FLOOR_ON and not _man.startswith("floor"):
 # 1500 ft for the diagnostic c172 (entry transient); everything else per map
 plant = JSBSimPlant(model=_model,
                     alt_ft=1500 if _model == "c172p" else round(_start_m * _M2FT))
+# --- thermal soaring proof: attach a drifting Gaussian lift column. The plant
+# injects its updraft as rising air, so the glider physically climbs in it and
+# the FW's net (total-energy) vario reads the lift. Broad column over the engage
+# area (the glider flies forward before SOARING anchors "here"); light wind so
+# the thermal drifts and the wind-shifted centering has to track it.
+if _man == "soar":
+    from jsbsim_plant import ThermalField
+    #                    (x_north_m, y_east_m, w0_ms, R_m)
+    plant.set_thermal_field(ThermalField([(0.0, 0.0, 4.0, 250.0)],
+                                         wind_north=1.0, wind_east=0.0))
 # --imu-offset x,y,z [m]: sensor lever arm from the CG (body frame). Off-CG
 # sensors additionally measure w x (w x r) -- constant in the body frame
 # during a steady spin, the false-down pull a CG-mounted model cannot show.
@@ -258,8 +274,7 @@ for _i, _a in enumerate(_argv):
         print(f"set {_n} = {_v}")
 
 PARAMS = ["fig_roll_rate", "fig_loop_rate", "fig_assist_z_gain", "fig_assist_vz_gain",
-          "fig_assist_max", "ohold_inverted_pitch_trim", "ohold_knife_left_pitch_trim",
-          "ohold_knife_right_pitch_trim", "ohold_load_limit", "small_angle"]
+          "fig_assist_max", "ohold_load_limit", "small_angle"]
 with open(f"jsbsim_params_{_man}.txt", "w") as pf:
     for name in PARAMS:
         try:
@@ -593,6 +608,9 @@ MAN_RC = {   # SEL detents: 1270 INVERT / 1510 KN L / 1750 KN R / 1985 HANG
     "circle_probe": dict(angle=RC_HIGH),              # AHRS circle probe
     "pitot_probe":  dict(angle=RC_HIGH),              # pitot lever-arm probe
     "poshold_probe": dict(angle=RC_HIGH),             # vanilla LOTR control
+    "soar":        dict(angle=RC_HIGH),               # thermal soaring: SOARING
+                                                      # box engaged via soar= in
+                                                      # the phase script
     "gyro_tip":    dict(angle=RC_HIGH),               # autogyro tip-over pair:
                                                       # --guard adds ROTOR GUARD
 }[MAN]
@@ -656,6 +674,19 @@ elif MAN == "poshold_probe":
     loop(60, "poshold", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH, floor=1900),
          print_every=2)
     loop(4, "exit", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH), print_every=1)
+elif MAN == "soar":
+    # SOARING PROOF: thermal soaring on a glider. Engage the SOARING box in the
+    # lift - the FW idles the motor and holds a loiter on the net-vario-centred
+    # thermal estimate; the glider must CLIMB on the updraft with the motor at
+    # idle, the loiter staying on the drifting column. Needs a pitot (net vario)
+    # and GPS (the nav loiter). Gate: idle throttle through the thermalling, a
+    # net altitude GAIN motor-off, the loiter bounded near the thermal.
+    loop(8, "cruise", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH), print_every=2)
+    # SOARING on (CH_INVERTED soar band 1275); the pilot throttle stays up but
+    # the FW idles it the whole time the glider is thermalling
+    loop(110, "soar", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH, soar=1275),
+         print_every=5)
+    loop(4, "exit", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH), print_every=2)
 elif MAN == "circle_probe":
     # AHRS isolation probe: a steady coordinated circle in plain ANGLE
     # (held aileron), no spin, no nav - measures the yaw estimate against

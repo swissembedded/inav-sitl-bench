@@ -27,6 +27,37 @@ FT2M = 0.3048
 G = 9.81
 
 
+class ThermalField:
+    """Drifting Gaussian lift columns for soaring tests. Each thermal is a
+    Gaussian updraft w(r) = w0 * exp(-r^2 / R^2) [m/s], and the whole field
+    drifts with the background wind - a thermal is locked to the air mass, so
+    the soaring loiter has to slide its circle with the wind to hold it (the
+    exact behaviour under test). Injected as earth-frame wind at the aircraft
+    position, i.e. the point (CG) updraft - the standard SITL approximation,
+    no spanwise gradient."""
+
+    def __init__(self, thermals, wind_north=0.0, wind_east=0.0):
+        # thermals: iterable of (x_north_m, y_east_m, w0_ms, R_m)
+        self.cells = [[float(x), float(y), float(w0), float(R)]
+                      for (x, y, w0, R) in thermals]
+        self.wind_n = float(wind_north)
+        self.wind_e = float(wind_east)
+
+    def drift(self, dt):
+        # the centre of every thermal rides the background wind
+        for c in self.cells:
+            c[0] += self.wind_n * dt
+            c[1] += self.wind_e * dt
+
+    def updraft_at(self, x, y):
+        w = 0.0
+        for cx, cy, w0, R in self.cells:
+            dx = x - cx
+            dy = y - cy
+            w += w0 * math.exp(-(dx * dx + dy * dy) / (R * R))
+        return w
+
+
 class JSBSimPlant:
     def __init__(self, model="aerobat3d", alt_ft=394, kts=45, dt=0.01):
         # 394 ft = 120 m: the legal RC ceiling; start the bench flights there
@@ -44,6 +75,7 @@ class JSBSimPlant:
         self._is_gyro = (model == "autog2")
         self.fdm.set_dt(dt)
         self.dt = dt
+        self._thermal = None      # optional ThermalField (soaring tests)
         f = self.fdm
         f["ic/h-sl-ft"] = alt_ft
         f["ic/vc-kts"] = kts
@@ -136,6 +168,15 @@ class JSBSimPlant:
         self._tvc_step(span)
         if getattr(self, "_is_gyro", False):
             self._rotor_step(span)
+        if self._thermal is not None:
+            # the drifting thermal field IS the atmosphere here: advance the
+            # centres by the wind and inject the point updraft as earth-frame
+            # wind before the physics runs (down < 0 = lift)
+            self._thermal.drift(span)
+            tx, ty = self.xy()
+            self.set_wind(north_ms=self._thermal.wind_n,
+                          east_ms=self._thermal.wind_e,
+                          down_ms=-self._thermal.updraft_at(tx, ty))
         n = max(1, int(round(span / self.BASE_DT)))
         if abs(self.fdm.get_delta_t() - self.BASE_DT) > 1e-9:
             self.fdm.set_dt(self.BASE_DT)
@@ -223,6 +264,11 @@ class JSBSimPlant:
         f["atmosphere/wind-north-fps"] = north_ms / FT2M
         f["atmosphere/wind-east-fps"] = east_ms / FT2M
         f["atmosphere/wind-down-fps"] = down_ms / FT2M
+
+    def set_thermal_field(self, field):
+        """Attach a ThermalField; step() then injects its drifting updraft as
+        earth-frame wind at the aircraft position. Pass None to clear."""
+        self._thermal = field
 
     def gps(self):
         """GPS-fix injection so the FC's nav altitude estimate becomes trusted
