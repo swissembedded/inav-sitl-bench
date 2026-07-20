@@ -46,9 +46,8 @@ def rc_ch(thr=RC_LOW, arm=RC_LOW, angle=RC_LOW, floor=RC_LOW, sel=RC_LOW, ele=RC
     #         FIGROLL 1525 / FIGSEQ 1675 / ANGLE >=1750
     # floor = FLOOR switch (CH_INVERTED), its own channel: >=1700 arms it
     # sel   = attitude-target selector (CH_SELECT): INVERT / KNIFE L/R / HANG
-    # soar  = SOARING on the SAME CH_INVERTED channel but a LOW band (1150-1400),
-    #         clear of the floor's 1700-2100; the soar maneuver never floors, so
-    #         it wins the channel when set. (bench provisions the range at slot 11)
+    # soar = SOARING on CH_INVERTED low band (1150-1400), clear of the floor's
+    #        1700-2100; the soar maneuver never floors, so it wins the channel.
     inv_ch = soar if soar != RC_LOW else floor
     return [ail, ele, thr, rud, arm, angle, inv_ch, sel]
 
@@ -144,6 +143,10 @@ _START_M = {
     "hang": 68, "hang_tvc": 40, "loop_fig": 68, "roll_hold": 104,
     "crash_test": 104, "snap_neg": 104,
     "floor_dive": 25, "floor_panic": 25, "floor_spin": 25,   # arm low -> low net
+    # universal floor coverage: drive EVERY aerobatic mode down through the floor
+    "floor_inverted": 25, "floor_knife": 25, "floor_hang": 25,
+    "floor_roll": 25, "floor_loop": 25,
+    "floor_manual": 25,   # manual dive: pilot lets go, floor pulls up; floor off to land
     "seq": 120, "seq_chain": 120,   # aerobatic routines: exempt, they climb high
     "fig_abort": 110,   # abort-proof: spin impulse up high, dive to the net after
     "circle_probe": 104,   # AHRS circle probe: steady turn, measure yaw truth
@@ -218,14 +221,12 @@ if FLOOR_ON and not _man.startswith("floor"):
 # 1500 ft for the diagnostic c172 (entry transient); everything else per map
 plant = JSBSimPlant(model=_model,
                     alt_ft=1500 if _model == "c172p" else round(_start_m * _M2FT))
-# --- thermal soaring proof: attach a drifting Gaussian lift column. The plant
-# injects its updraft as rising air, so the glider physically climbs in it and
-# the FW's net (total-energy) vario reads the lift. Broad column over the engage
-# area (the glider flies forward before SOARING anchors "here"); light wind so
-# the thermal drifts and the wind-shifted centering has to track it.
+# thermal soaring proof: a drifting Gaussian lift column. The plant injects the
+# updraft as rising air (the glider physically climbs, the FW net vario reads
+# the lift); broad column over the engage area, light wind so the centering has
+# to track the drift.
 if _man == "soar":
     from jsbsim_plant import ThermalField
-    #                    (x_north_m, y_east_m, w0_ms, R_m)
     plant.set_thermal_field(ThermalField([(0.0, 0.0, 4.0, 250.0)],
                                          wind_north=1.0, wind_east=0.0))
 # --imu-offset x,y,z [m]: sensor lever arm from the CG (body frame). Off-CG
@@ -274,7 +275,8 @@ for _i, _a in enumerate(_argv):
         print(f"set {_n} = {_v}")
 
 PARAMS = ["fig_roll_rate", "fig_loop_rate", "fig_assist_z_gain", "fig_assist_vz_gain",
-          "fig_assist_max", "ohold_load_limit", "small_angle"]
+          "fig_assist_max", "ohold_inverted_pitch_trim", "ohold_knife_left_pitch_trim",
+          "ohold_knife_right_pitch_trim", "ohold_load_limit", "small_angle"]
 with open(f"jsbsim_params_{_man}.txt", "w") as pf:
     for name in PARAMS:
         try:
@@ -591,6 +593,14 @@ MAN_RC = {   # SEL detents: 1270 INVERT / 1510 KN L / 1750 KN R / 1985 HANG
     "floor_dive":  dict(angle=RC_HIGH, floor=1900),   # ANGLE + FLOOR switch on
     "floor_panic": dict(angle=RC_HIGH, floor=1900),   # dive with the throttle CHOPPED
     "floor_spin":  dict(floor=1900),                  # flat spin INTO the floor (body sets mode)
+    # universal floor coverage: each aerobatic mode driven down through the floor
+    # (the dispatch adds floor=1900 + the idle drive; these are just the detents)
+    "floor_inverted": dict(sel=1270),                 # ANGLE off: the hold owns the attitude
+    "floor_knife":    dict(sel=1510),                 # knife edge (left), ANGLE off
+    "floor_hang":     dict(sel=1985),                 # prop hang, ANGLE off
+    "floor_roll":     dict(angle=1525),               # caught mid F ROLL
+    "floor_loop":     dict(angle=1225),               # caught mid F LOOP
+    "floor_manual":   dict(angle=RC_HIGH),            # plain manual dive
     "crash_test":  dict(angle=RC_HIGH),               # impact + stillness -> motor cut + gesture
     "snap_neg":    dict(angle=RC_HIGH),               # impact + keeps flying -> must NOT cut
     "flat_spin":   dict(angle=1375),                  # FSPIN band on the mode selector (pilot rudder)
@@ -768,6 +778,49 @@ elif MAN == "floor_spin":
     loop(1, "takeover", rc_ch(thr=1650, arm=RC_HIGH, ail=1700, angle=1375, floor=1900), print_every=0.7)
     loop(5, "after-takeover", rc_ch(thr=1650, arm=RC_HIGH, angle=1375, floor=1900), print_every=0.7)
     loop(4, "exit", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH, floor=1900), print_every=0.7)
+elif MAN in ("floor_inverted", "floor_knife", "floor_hang", "floor_roll", "floor_loop"):
+    # UNIVERSAL FLOOR COVERAGE (Daniel: the floor is not spin-specific - it must
+    # catch EVERY aerobatic mode + manual). Climb + arm the floor, engage the
+    # mode, then CHOP to idle so the hold loses its altitude authority and sinks
+    # through the floor IN ITS OWN ATTITUDE (inverted on the back, knife at 90
+    # deg bank, hang nose-up, roll/loop mid-rotation - no elevator, the FW must
+    # catch on its own). The floor must LEVEL out of that attitude, hold above
+    # the line, and LATCH the mode out until the switch is cycled.
+    loop(5, "climb", rc_ch(thr=1900, arm=RC_HIGH, ele=1800, angle=RC_HIGH), print_every=1)
+    loop(3, "arm-floor", rc_ch(thr=1900, arm=RC_HIGH, ele=1800, angle=RC_HIGH, floor=1900), print_every=1)
+    loop(5, "settle", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH, floor=1900), print_every=0.7)
+    loop(8, "mode-hold", rc_ch(thr=1650, arm=RC_HIGH, floor=1900, **MAN_RC), print_every=0.7)
+    _t0 = _frames[0]
+    while not (_safety_cache[0] & 2) and (_frames[0] - _t0) * DT < 35:
+        loop(0.5, "floor-dive", rc_ch(thr=1000, arm=RC_HIGH, floor=1900, **MAN_RC), print_every=2)
+    # THE FORGOTTEN SWITCH: the mode stays selected, sticks released. The floor
+    # must have leveled out of the attitude and now orbits, the mode latched out.
+    loop(6, "caught", rc_ch(thr=1650, arm=RC_HIGH, floor=1900, **MAN_RC), print_every=0.7)
+    loop(20, "forgot", rc_ch(thr=1650, arm=RC_HIGH, floor=1900, **MAN_RC), print_every=0.7)
+    # pilot collects and TAKES OVER: a fresh aileron blip after centered sticks
+    # releases the orbit, and the latched mode must NOT re-engage on its still-
+    # held switch
+    loop(0.4, "takeover", rc_ch(thr=1650, arm=RC_HIGH, ail=1680, floor=1900, **MAN_RC), print_every=0.4)
+    loop(10, "after-takeover", rc_ch(thr=1650, arm=RC_HIGH, floor=1900, **MAN_RC), print_every=1)
+elif MAN == "floor_manual":
+    # MANUAL through the floor + PILOT LETS GO (Daniel: the real case - flying
+    # manually the pilot dives, realizes the mistake and RELEASES the sticks,
+    # and the floor pulls up). Then the FLOOR MUST BE SWITCHED OFF TO LAND:
+    # with it on the floor keeps catching every descent; off, the aircraft
+    # descends through the line and can land.
+    loop(6, "climb", rc_ch(thr=1900, arm=RC_HIGH, ele=1800, angle=RC_HIGH), print_every=1)
+    loop(2, "arm-floor", rc_ch(thr=1700, arm=RC_HIGH, angle=RC_HIGH, floor=1900), print_every=1)
+    loop(3, "level", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH, floor=1900), print_every=0.7)
+    # manual dive, held down-elevator, toward the floor
+    loop(5, "dive", rc_ch(thr=1500, ele=1150, arm=RC_HIGH, angle=RC_HIGH, floor=1900), print_every=0.7)
+    # PILOT LETS GO: sticks centered - the floor takes over and pulls up
+    _t0 = _frames[0]
+    while not (_safety_cache[0] & 2) and (_frames[0] - _t0) * DT < 20:
+        loop(0.5, "released", rc_ch(thr=1500, arm=RC_HIGH, angle=RC_HIGH, floor=1900), print_every=2)
+    loop(12, "recovered", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH, floor=1900), print_every=0.7)
+    # SWITCH THE FLOOR OFF to land: no floor=1900 -> the box is off -> a gentle
+    # glide descends through the line (the floor must NOT catch = landable)
+    loop(15, "floor-off-land", rc_ch(thr=1150, ele=1400, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
 elif MAN == "floor_panic":
     # dive with the throttle CHOPPED (the panic case): the recovery climb
     # must get its own energy (cruise + pitch-to-throttle floor), the motor

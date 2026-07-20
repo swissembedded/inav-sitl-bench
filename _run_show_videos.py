@@ -458,6 +458,70 @@ def verify_gyro_land():
     return (not fails), fails
 
 
+def verify_floor_catch(man):
+    """Universal floor coverage (Daniel: the floor is not spin-specific). The
+    floor must catch ANY aerobatic mode that sinks through the line
+    (inverted / knife / hang / roll / loop), LEVEL out of that attitude, hold
+    above the floor, and latch the mode out - after the pilot's takeover the
+    still-held switch must not flip the aircraft back into the aerobatic pose."""
+    fails = []
+    rows = list(csv.DictReader(open(f"jsbsim_log_{man}.csv")))
+    LINE = 25.0 + 25.0
+    caught = [r for r in rows if r["phase"] in ("caught", "forgot") and int(r["safety"]) & 2]
+    if not caught:
+        return False, [f"{man}: floor never caught the sink through the line"]
+    settle = caught[len(caught) // 2:]
+    off = [r for r in settle if abs(float(r["js_roll"])) > 45 or abs(float(r["js_pitch"])) > 45]
+    if len(off) > len(settle) * 0.15:
+        fails.append(f"{man}: did not level out - roll/pitch > 45 deg in "
+                     f"{len(off) / len(settle) * 100:.0f}% of the settled orbit")
+    # the recovery dips into the budget BELOW the line by design (the height
+    # under the line IS the recovery budget) - rolling upright out of inverted
+    # / knife eats more of it than a dive. It must not reach the ground, and it
+    # must then climb back to loiter AT/above the line.
+    lowest = min(float(r["alt"]) for r in caught)
+    if lowest < LINE - 15:
+        fails.append(f"{man}: recovery sank {LINE - lowest:.0f} m under the line (near the ground)")
+    orbit = [r for r in rows if r["phase"] == "forgot"]
+    if orbit and statistics.median([float(r["alt"]) for r in orbit]) < LINE - 5:
+        fails.append(f"{man}: did not climb back to loiter at the floor line")
+    after = [r for r in rows if r["phase"] == "after-takeover"]
+    if after:
+        tail = after[len(after) // 2:]
+        if any(abs(float(r["js_roll"])) > 60 or abs(float(r["js_pitch"])) > 60 for r in tail):
+            fails.append(f"{man}: latched mode re-engaged after takeover (attitude went aerobatic again)")
+    return (not fails), fails
+
+
+def verify_floor_manual():
+    """Manual floor recovery + land (Daniel): flying manually the pilot dives,
+    RELEASES the sticks, and the floor must pull up on its own; then with the
+    FLOOR SWITCHED OFF the aircraft must be able to descend through the line
+    and land (the floor no longer catches)."""
+    fails = []
+    rows = list(csv.DictReader(open("jsbsim_log_floor_manual.csv")))
+    LINE = 25.0 + 25.0
+    rel = [r for r in rows if r["phase"] in ("released", "recovered")]
+    if not any(int(r["safety"]) & 2 for r in rel):
+        fails.append("manual: floor never caught after the pilot let go")
+    rec = [r for r in rows if r["phase"] == "recovered"]
+    if rec:
+        if float(rec[-1]["alt"]) - float(rec[0]["alt"]) < 5:
+            fails.append(f"manual: no climb after release ({float(rec[-1]['alt'])-float(rec[0]['alt']):+.0f} m)")
+        if min(float(r["alt"]) for r in rec) < LINE - 5:
+            fails.append("manual: sank under the floor line during recovery")
+        if max(abs(float(r["js_roll"])) for r in rec[len(rec)//2:]) > 45:
+            fails.append("manual: did not level out during recovery")
+    # floor OFF -> must descend through the line and NOT be caught (landable)
+    land = [r for r in rows if r["phase"] == "floor-off-land"]
+    if land:
+        if min(float(r["alt"]) for r in land) > LINE:
+            fails.append(f"manual: floor-off did not descend through the line (min {min(float(r['alt']) for r in land):.0f} m) - cannot land")
+        if any(int(r["safety"]) & 2 for r in land[len(land)//3:]):
+            fails.append("manual: floor still caught with the box OFF - would fight the landing")
+    return (not fails), fails
+
+
 def verify_soar():
     """Thermal soaring proof (Daniel: motor off, ride the lift). With the
     SOARING box engaged the FW idles the motor and the glider must CLIMB on
@@ -472,23 +536,19 @@ def verify_soar():
         return False, ["soar: no soar phase in the log"]
     thr = [float(r["fc_thr"]) for r in soar]
     alt = [float(r["alt"]) for r in soar]
-    # 1. the motor is idled while thermalling
     idle_frac = sum(1 for v in thr if v < 0.2) / len(thr)
     if statistics.median(thr) > 0.2 or idle_frac < 0.8:
         fails.append(f"soar: motor not idled (median thr {statistics.median(thr):.2f}, "
                      f"{idle_frac*100:.0f}% idle) - SOARING never thermalled")
-    # 2. it CLIMBS on the idle and never sinks below where it started
     gain = alt[-1] - alt[0]
     if gain < 15:
         fails.append(f"soar: no climb on the lift ({gain:+.0f} m over the phase)")
     if min(alt) < alt[0] - 5:
         fails.append(f"soar: sank {alt[0]-min(alt):.0f} m below the entry")
-    # 3. the loiter stays bounded near the (drifting) thermal, not a runaway
     bx, by = float(soar[0]["x"]), float(soar[0]["y"])
     dmax = max(((float(r["x"]) - bx) ** 2 + (float(r["y"]) - by) ** 2) ** 0.5 for r in soar)
     if dmax > 600:
         fails.append(f"soar: loiter ran away {dmax:.0f} m from entry (lost the thermal)")
-    # 4. the motor RETURNS when SOARING is dropped (proves it was an override)
     ex = [float(r["fc_thr"]) for r in rows if r["phase"] == "exit"]
     if ex and statistics.mean(ex) < 0.4:
         fails.append(f"soar: motor did not return after exit (thr {statistics.mean(ex):.2f})")
