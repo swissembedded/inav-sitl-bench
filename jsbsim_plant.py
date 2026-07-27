@@ -230,7 +230,14 @@ class JSBSimPlant:
         # through any attitude error, level flight alone masked it. The
         # whole orbit-anchor/antipode hunt sat on top of this. Mag
         # FAILURE stays all-zeros by FW convention (fc_msp sim path).
-        b = rotate_earth_to_body(self.q, (16000.0, 0.0, 0.0))
+        # INAV's quaternion convention NEGATES yaw (imuComputeQuaternionFromRPY
+        # feeds -yaw; realFlight.c builds the injected mag with exactly that
+        # quaternion). The bench must mirror it or the injected field points to
+        # the MIRRORED heading: invisible at level (GPS COG aiding corrects the
+        # estimate) but at inverted the tilt gate turns GPS aiding off and the
+        # mirrored mag alone walked the yaw estimate 168 deg away from truth.
+        r, p, y = self.rpy()
+        b = rotate_earth_to_body(q_from_rpy(r, p, -y), (16000.0, 0.0, 0.0))
         return (int(b[0]), int(b[1]), int(b[2]))
 
     # The nozzle actuator is the SAME servo class as the surfaces, geared
@@ -336,5 +343,22 @@ class JSBSimPlant:
         f_body = tuple(fb + lv for fb, lv in zip(f_body, lever))
         return tuple(int(round(max(-16.0, min(16.0, a)) * 1000)) for a in f_body)
 
+    def set_baro_ram(self, on=True):
+        """Static-port dynamic-pressure corruption (knife flight / fast
+        rolled passes): the port sees a ram fraction of q once the airframe
+        rolls the port face into the flow. Opt-in - the historical flights
+        flew a clean baro."""
+        self._baro_ram = bool(on)
+
     def baro_pa(self):
-        return int(round(101325.0 * math.exp(-self.z / 8434.0)))
+        p = 101325.0 * math.exp(-self.z / 8434.0)
+        if getattr(self, "_baro_ram", False):
+            r, pch, _ = self.rpy()
+            # port exposure = fuselage SIDE into the flow (wing axis
+            # vertical): knife = 1, dive/level/inverted = 0 - a steep dive
+            # streams the fuselage lengthwise, the static port sees no ram
+            # (consistent with the FW's |rMat[2][1]| schedule)
+            port = abs(math.sin(math.radians(r)) * math.cos(math.radians(pch)))
+            v = self.ias_kts() * 0.5144
+            p += 0.35 * 0.5 * 1.225 * v * v * port
+        return int(round(p))

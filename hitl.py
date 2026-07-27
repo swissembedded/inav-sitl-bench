@@ -26,6 +26,8 @@ the stream, options only decide whether the FC uses them):
   mag      : i16*3, uT*20                                    (6 B)
   v3 tail  : rangefinder u16, current u16,
              rcInput u16*8, rssi u16                         (22 B)
+  cno      : u8 mean C/N0 [dBHz], ONLY when HITL_GPS_CNO set (antenna-
+             shading model; the FW applies it to the NEXT GPS block)
 (no vbat/airspeed bytes: we do not set HITL_EXT_BATTERY_VOLTAGE /
  HITL_AIRSPEED / HITL_EXTENDED_FLAGS)
 
@@ -47,6 +49,7 @@ HITL_USE_IMU = 1 << 3
 HITL_HAS_NEW_GPS_DATA = 1 << 4
 HITL_AIRSPEED = 1 << 6
 HITL_SIM_RC_INPUT = 1 << 11
+HITL_GPS_CNO = 1 << 15
 
 BENCH_FLAGS = HITL_ENABLE | HITL_MUTE_BEEPER | HITL_USE_IMU | HITL_SIM_RC_INPUT
 
@@ -71,7 +74,8 @@ def pack_request(acc_mg: tuple[int, int, int],
                  mag: tuple[int, int, int] = (0, 0, 0),
                  flags: int = BENCH_FLAGS,
                  gps: dict | None = None,
-                 airspeed_cms: int | None = None) -> bytes:
+                 airspeed_cms: int | None = None,
+                 gps_cno: int | None = None) -> bytes:
     assert len(rc_channels_us) == 8
     # a diverged plant (crash, numerical blow-up) produces pressures far
     # outside the packable range; fail with a diagnosis instead of an
@@ -85,6 +89,8 @@ def pack_request(acc_mg: tuple[int, int, int],
         flags |= HITL_HAS_NEW_GPS_DATA
     if airspeed_cms is not None:
         flags |= HITL_AIRSPEED
+    if gps_cno is not None:
+        flags |= HITL_GPS_CNO
     p = struct.pack("<BH", 3, flags)
     if gps is not None:
         # clamp to wire ranges: ground-impact wreck physics ramp the plant
@@ -115,6 +121,11 @@ def pack_request(acc_mg: tuple[int, int, int],
     p += struct.pack("<HH", 0xFFFF, 0)                               # rangefinder off, current
     p += struct.pack("<8H", *[int(v) for v in rc_channels_us])
     p += struct.pack("<H", 1000)                                     # rssi
+    if gps_cno is not None:
+        # trailing byte, only with HITL_GPS_CNO: mean C/N0 of the strongest
+        # signals [dBHz]; the FW applies it to the NEXT GPS block (1 frame
+        # of lag - physical, NAV-SIG arrives around the solution too)
+        p += struct.pack("<B", max(0, min(63, int(round(gps_cno)))))
     return p
 
 

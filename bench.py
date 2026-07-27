@@ -122,6 +122,14 @@ def provision():
     # provider MSP is driver-based: gpsInit() keeps the feature alive without
     # a serial port (any other provider clears FEATURE_GPS at boot on SITL)
     msp.set_setting("gps_provider", struct.pack("<B", 1))
+    # aerobatic GPS contract, layer 2 (dead reckoning): on fix loss the
+    # in-tree estimated-fix synthesizes a virtual fix from airspeed along
+    # the attitude + wind + baro (updateEstimatedGPSFix). NOTE:
+    # fw_reference_airspeed is NOT set here - it feeds the AHRS turnrate
+    # centrifugal compensation of EVERY flight (a global 2300 flipped 10
+    # regression gates); estimator test flights that need the matching
+    # DR speed pass --set fw_reference_airspeed=2300.0 themselves.
+    msp.set_setting("inav_allow_gps_fix_estimation", struct.pack("<B", 1))
     # standard airplane servo mixer (S1 aileron, S2 elevator, S3 rudder):
     # without smix rules isMixerUsingServos() is false, servoMixer() never
     # runs and the MSP_SIMULATOR reply's stabilized outputs stay at 0
