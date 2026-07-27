@@ -155,9 +155,16 @@ _START_M = {
     "soar": 80,   # thermal soaring: arm mid-band (inside soar_alt_min..max),
                   # engage SOARING in the lift, climb on the updraft motor-idled
     "show": 25,   # one-video-per-airplane: arm low, Einflug, sequence
-    "gyro_tip": 80,   # autogyro tip-over pair: the T/W-0.83 gyro cannot climb
-                      # there itself - start high enough that TWO catch
-                      # cycles fit above the terrain
+    # guard flight high (the cap-only attitude catch consumes ~80 m before
+    # the pilot's power bites); the MANUAL crash proof keeps 80 m - from
+    # 160 m it recovers in ground effect and never proves the wreck
+    "gyro_tip": 160 if ("--guard" in sys.argv or "--land" in sys.argv) else 80,
+    "_gyro_doc": 0,   # autogyro tip-over pair: the T/W-0.83 gyro cannot climb
+                      # there itself - and under the cap-only contract the
+                      # attitude-only catch consumes ~80 m and more before
+                      # the pilot's returned power bites (Daniel: gyro
+                      # aerobatics need GENEROUS height reserve; documented
+                      # in the contract's fat warning)
 }
 _start_m = _START_M.get(_man, 104)
 for _i, _a in enumerate(sys.argv):
@@ -192,6 +199,15 @@ GPS_REAL = "--gps-real" in sys.argv
 GPS_FALSEVALID = "--gps-falsevalid" in sys.argv
 if GPS_REAL and GPS_FALSEVALID:
     raise SystemExit("--gps-real and --gps-falsevalid are mutually exclusive")
+# --fv-coast=<s>: how long the shaded receiver keeps reporting a valid fix
+# while coasting before it admits the loss. 1.8 s is the optimistic end;
+# real receivers can coast considerably longer - the residual-gate verdict
+# depends on this number, so it is a sweep parameter, not a constant.
+# (single-token =form: a bare value would be eaten as the maneuver name)
+FV_COAST = 1.8
+for _a in sys.argv:
+    if _a.startswith("--fv-coast="):
+        FV_COAST = float(_a.split("=", 1)[1])
 MAG_ON = "--mag" in sys.argv
 PITOT_ON = "--pitot" in sys.argv   # inject truth airspeed (pitot-equipped airframes)
 # --pitot-lever-probe: log the corrected airspeed (MSP2_INAV_AIR_SPEED =
@@ -214,7 +230,15 @@ _gps_lock = [True, -10.0]   # [locked, time the outage condition began/ended]
 # internal (coasted) solution in wire units + the shade/unshade clocks
 _gps_fv = {"shaded_since": None, "unshaded_since": None, "coast": None}
 _gps_origin = [None, None]   # first-frame lat_e7/lon_e7 for meter logging
+# C/N0 shading model (PDF layer 1): the strongest satellites sit ~45 dBHz
+# under open sky; turning the patch antenna away collapses them within
+# ~0.15 s - the PHYSICAL leading indicator, ahead of every fix flag. The
+# FW's collapse gate (processCnoGate) reads this; the false-valid fix
+# flags above stay whatever the receiver model claims.
+_cno_state = [45.0]
 _orb_cache = [0, 0]          # FC-side orbit view: [heading err x10, dist m]
+_est_cache = ["", "", "", ""]  # slot 0 = nav Z target, 1/2/3 = est Z/X/Y [m]
+                               # (soar thermalling owns the slots - masked)
 _CLIMB_TARGET_M = _start_m
 if FLOOR_ON and not _man.startswith("floor"):
     _start_m = 25.0
@@ -229,6 +253,10 @@ if _man == "soar":
     from jsbsim_plant import ThermalField
     plant.set_thermal_field(ThermalField([(0.0, 0.0, 4.0, 250.0)],
                                          wind_north=1.0, wind_east=0.0))
+# --baro-ram: static-port dynamic-pressure corruption at knife/fast rolled
+# attitudes (the physical error the FW's layer-4 baro fade defends against)
+if "--baro-ram" in sys.argv:
+    plant.set_baro_ram(True)
 # --imu-offset x,y,z [m]: sensor lever arm from the CG (body frame). Off-CG
 # sensors additionally measure w x (w x r) -- constant in the body frame
 # during a steady spin, the false-down pull a CG-mounted model cannot show.
@@ -241,7 +269,8 @@ log.write("t,phase,mode,fc_roll,fc_pitch,fc_yaw,js_roll,js_pitch,js_yaw,ias,alt,
           "ail,ele,rud,thr,fc_thr,st_ail,st_ele,st_thr,st_rud,"
           "st_arm,st_angle,st_inv,st_sel,fc_alt,tvc_p,tvc_y,x,y,gps_fix,gps_sat,flap,"
           "safety,accw,inj_baro_pa,inj_gps_alt,"
-          "inj_gps_x,inj_gps_y,inj_gps_vn,inj_gps_ve,orb_err,orb_dist\n")
+          "inj_gps_x,inj_gps_y,inj_gps_vn,inj_gps_ve,orb_err,orb_dist,"
+          "est_x,est_y,est_z,nav_az\n")
 BOXIDS = read_boxids(m)
 _mode_cache = ["DISARMED", 0.0]     # [last mode string, last poll wall-time]
 _alt_cache = [0.0]                  # last FC-measured altitude
@@ -399,7 +428,7 @@ def loop(secs, phase, rc, thr_override=None, print_every=1.0, freeze=False, gps=
                                   / (111320.0 * max(0.2, math.cos(
                                         math.radians(_c["lat"] / 1e7)))) * 1e7)
                     _c["alt"] -= _c["vd"] * DT * 100.0
-                    if _shade_t > 1.8:
+                    if _shade_t > FV_COAST:
                         gps_frame = dict(gps_frame, fixType=0, numSat=0)
                     else:
                         _spd = math.hypot(_c["vn"], _c["ve"])
@@ -416,6 +445,25 @@ def loop(secs, phase, rc, thr_override=None, print_every=1.0, freeze=False, gps=
                             vel_ned_cms=(int(round(_c["vn"] * 100.0)),
                                          int(round(_c["ve"] * 100.0)),
                                          int(round(_c["vd"] * 100.0))))
+        # C/N0 per frame: ideal --gps keeps the ideal antenna (constant 45,
+        # regressions untouched); the receiver-reality modes collapse it
+        # with the same shading criterion their fix models use
+        _cno = None
+        if GPS_ON:
+            if GPS_REAL or GPS_FALSEVALID:
+                _cr, _cp, _ = plant.rpy()
+                _ctarget, _ctau = ((16.0, 0.15)
+                                   if (abs(_cr) > 60 or abs(_cp) > 60)
+                                   else (45.0, 0.3))
+                _cno_state[0] += (_ctarget - _cno_state[0]) * (1.0 - math.exp(-DT / _ctau))
+            _cno = _cno_state[0]
+        # frozen plant: the FDM properties still carry the trim IC velocity
+        # (23 m/s at 45 kts) while the position is held - a real static
+        # receiver reports a CONSISTENT static solution. The inconsistent
+        # pair walked the FC estimate into a phantom equilibrium during the
+        # arm phases (measured 15 m stock, 47 m with the residual gate).
+        if freeze and gps_frame:
+            gps_frame = dict(gps_frame, speed_cms=0, vel_ned_cms=(0, 0, 0))
         # injected-GPS residual logging (meters relative to the first GPS
         # frame, matching the plant x/y convention) - the measurement the
         # residual-gate parameters will be set from
@@ -439,7 +487,7 @@ def loop(secs, phase, rc, thr_override=None, print_every=1.0, freeze=False, gps=
         _baro_pa = plant.baro_pa()
         _asp = int(plant.ias_kts() * 51.444) if PITOT_ON else None
         r = sim_step(m, plant.acc_mg(), plant.gyro_dps16(), rc_sent, baro_pa=_baro_pa, gps=gps_frame, mag=_mag,
-                     airspeed_cms=_asp)
+                     airspeed_cms=_asp, gps_cno=_cno)
         if r.debug[0] == 7:            # FW safety word cycles in slot 7
             _safety_cache[0] = r.debug[1]
         elif r.debug[0] == 6:          # FW effective acc weight
@@ -448,6 +496,10 @@ def loop(secs, phase, rc, thr_override=None, print_every=1.0, freeze=False, gps=
             _orb_cache[0] = r.debug[1]
         elif r.debug[0] == 5:          # floor orbit: FC-side distance to anchor [m]
             _orb_cache[1] = r.debug[1]
+        elif r.debug[0] in (0, 1, 2, 3) and _man != "soar":
+            # slot 0 nav Z target, 1/2/3 FC est Z/X/Y [cm] -> m
+            # (soar thermalling carries centering data in these slots)
+            _est_cache[r.debug[0]] = f"{r.debug[1] / 100.0:.2f}"
         t_msp = time.perf_counter()
         ail = -r.stab_roll if FLIP_AIL else r.stab_roll
         ele = -r.stab_pitch if FLIP_ELE else r.stab_pitch
@@ -525,7 +577,8 @@ def loop(secs, phase, rc, thr_override=None, print_every=1.0, freeze=False, gps=
                   f"{_safety_cache[0]},{_accw_cache[0]},{_baro_pa},"
                   f"{gps_frame['alt_cm'] if gps_frame else ''},"
                   f"{_inj_x},{_inj_y},{_inj_vn},{_inj_ve},"
-                  f"{_orb_cache[0]},{_orb_cache[1]}\n")
+                  f"{_orb_cache[0]},{_orb_cache[1]},"
+                  f"{_est_cache[2]},{_est_cache[3]},{_est_cache[1]},{_est_cache[0]}\n")
         if time.time() - last > print_every:
             print(f"  [{phase:7}] FC {fr:+7.1f}/{fp:+6.1f}/{fy:3.0f} | JS {jr:+7.1f}/{jp:+6.1f}/{jy:5.1f} | "
                   f"IAS {plant.ias_kts():3.0f} alt {plant.z:5.0f} ele {ele:+.2f}")
@@ -692,8 +745,30 @@ elif MAN == "soar":
     # and GPS (the nav loiter). Gate: idle throttle through the thermalling, a
     # net altitude GAIN motor-off, the loiter bounded near the thermal.
     loop(8, "cruise", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH), print_every=2)
-    # SOARING on (CH_INVERTED soar band 1275); the pilot throttle stays up but
-    # the FW idles it the whole time the glider is thermalling
+    # SOARING on (CH_INVERTED soar band 1275), then a closed-loop return on
+    # plant truth: bank until the nose points at the field centre (0,0), then
+    # carry the cruise straight over the column. The motor-aware netto only
+    # triggers on TRUE air lift (a powered level cruise reads ~0), so the
+    # trigger fires where the lift actually is - near the core.
+    import math as _m
+    _rt0 = time.time()
+    _sgn = 1.0            # self-correcting turn sign: if |err| grows, flip
+    _lastAbs = None
+    while time.time() - _rt0 < 60:
+        _x, _y = plant.xy()
+        _yaw = plant.rpy()[2] % 360.0
+        _brg = _m.degrees(_m.atan2(-_y, -_x)) % 360.0
+        _err = (_brg - _yaw + 540.0) % 360.0 - 180.0
+        if abs(_err) < 8.0 and _m.hypot(_x, _y) > 50.0:
+            break
+        if _lastAbs is not None and abs(_err) > _lastAbs + 2.0:
+            _sgn = -_sgn
+        _lastAbs = abs(_err)
+        _cmd = 1500 + int(_sgn * (300 if _err > 0.0 else -300))
+        # bank alone barely turns the simple aero decks (no roll->yaw
+        # coupling) - command the RUDDER with the bank, like a pilot
+        loop(1.0, "return", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH,
+                                  ail=_cmd, rud=_cmd, soar=1275))
     loop(110, "soar", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH, soar=1275),
          print_every=5)
     loop(4, "exit", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH), print_every=2)
@@ -738,7 +813,11 @@ elif MAN == "fig_abort":
     # latch contract: the orbit holds until the pilot acts - close level
     loop(1, "takeover", rc_ch(thr=1650, ail=1700, arm=RC_HIGH, angle=RC_HIGH),
          print_every=0.7)
-    loop(3, "level-out", rc_ch(thr=1650, arm=RC_HIGH, angle=RC_HIGH),
+    # show energy management for the 120 m ceiling: with the estimator and
+    # anchor fixes in, the remaining peak headroom is set by how much energy
+    # the inter-figure level-out carries - a lean throttle here keeps the
+    # whole show under the ceiling (NOT a bug mask; the causes are fixed)
+    loop(3, "level-out", rc_ch(thr=1300, arm=RC_HIGH, angle=RC_HIGH),
          print_every=0.7)
 elif MAN in ("flat_spin", "inv_spin", "knife_spin"):
     # FLAT SPIN family: the box holds the selected attitude (flat, inverted
@@ -761,7 +840,12 @@ elif MAN == "floor_spin":
     loop(4, "arm-floor", rc_ch(thr=1900, arm=RC_HIGH, ele=1800, angle=RC_HIGH, floor=1900), print_every=1)
     loop(3, "spin-hold", rc_ch(thr=1650, arm=RC_HIGH, angle=1375, floor=1900), print_every=0.7)
     loop(8, "flat-spin", rc_ch(thr=1000, arm=RC_HIGH, rud=2000, angle=1375, floor=1900), print_every=0.7)
-    loop(12, "caught", rc_ch(thr=1050, arm=RC_HIGH, angle=1375, floor=1900), print_every=0.7)
+    # cap-only contract: the catch is UNPOWERED while the stick sits at the
+    # spin idle - the net levels the wings, energy is the pilot's job. A
+    # 12 s idle hold mushed into the ground from 75 m (measured, ~8 m/s
+    # sink); the realistic story (same ruling as the gyro tip) gives the
+    # throttle back a few seconds after the catch.
+    loop(4, "caught", rc_ch(thr=1050, arm=RC_HIGH, angle=1375, floor=1900), print_every=0.7)
     # THE FORGOTTEN SWITCH (Daniel's latch + orbit contract): the FSPIN
     # box STAYS selected after the catch, sticks released, trim throttle.
     # The recovery must NOT hand back - it climbs to the floor and ORBITS
@@ -832,7 +916,12 @@ elif MAN == "floor_panic":
     loop(8, "after", rc_ch(thr=1050, arm=RC_HIGH, angle=RC_HIGH, floor=1900), print_every=0.7)
     # pilot takeover: after the catch (sticks were centered in "after") a
     # fresh deflection must end the recovery immediately - ANGLE is back
-    loop(6, "takeover", rc_ch(thr=1650, arm=RC_HIGH, ele=1400, angle=RC_HIGH, floor=1900), print_every=0.7)
+    # 10 s: the unpowered catch glides BELOW the line now (cap-only), the
+    # powered takeover needs the time to climb back above it and release
+    # contract landing path: below the line with the box ON the net keeps
+    # catching (correct) - the documented release is FLOOR BOX OFF
+    loop(4, "takeover", rc_ch(thr=1750, arm=RC_HIGH, ele=1400, angle=RC_HIGH, floor=1900), print_every=0.7)
+    loop(12, "takeover", rc_ch(thr=1750, arm=RC_HIGH, angle=RC_HIGH, floor=1000), print_every=0.7)
 elif MAN == "crash_test":
     # crash detection POSITIVE path: impact spike, then the airframe lies
     # still (frozen plant = frozen baro, 1 g, zero rates, GPS speed 0) ->
@@ -1060,7 +1149,25 @@ elif MAN == "show":
         # NO bleed after: the hang ends at hover speed by design - an idle
         # nose-down bleed only dives back through the line (the timber catch)
         _to_alt(80)
-        loop(10, "hang", rc_ch(thr=1500, arm=RC_HIGH, angle=RC_LOW, sel=1985),
+        # the pull converts entry speed to height (measured 0.80-0.95 *
+        # v^2/2g depending on drag: funjet 73 kt -> +58 m, aerobat3d
+        # 55 kt -> +39 m): bleed speed until the zoom FITS FROM HERE - a
+        # budget check, not a fixed speed. A slick jet held to a fixed
+        # 50 kts glides through the 55 m floor line first (measured:
+        # funjet sank 78 -> 53 m, floor caught, the hang never stood).
+        # As the glide sinks, the budget grows and the loop exits on its
+        # own; slow airframes skip it entirely. 118 = the 122 gate minus
+        # build-noise margin, 0.95 = the most ballistic measured ratio.
+        _t0d = _frames[0]
+        while (plant.ias_kts() * 0.5144) ** 2 * 0.95 / 19.62 > \
+                max(0.0, 118.0 - plant.z) and (_frames[0] - _t0d) * DT < 12:
+            loop(0.5, "base", rc_ch(thr=1150, arm=RC_HIGH, angle=RC_HIGH),
+                 print_every=2)
+        # throttle_rule cap-only: the stick must sit ABOVE the hover need,
+        # the hover PID trims down from it. 1500 was under the hover point
+        # of the hotter airframes (turbotimber/funjet show hangs sagged,
+        # median pitch 38/-0); a generous stick costs nothing under the cap.
+        loop(10, "hang", rc_ch(thr=1750, arm=RC_HIGH, angle=RC_LOW, sel=1985),
              print_every=0.7)
         loop(3, "exit", rc_ch(thr=thrL, arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
 
@@ -1163,7 +1270,8 @@ elif MAN == "show":
         loop(5, "level-out", rc_ch(thr=1000, ele=1250,
                                    arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
     else:
-        loop(5, "level-out", rc_ch(thr=max(1000, thrL - 120), arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
+        # same show energy management as the inter-figure level-out
+        loop(5, "level-out", rc_ch(thr=max(1000, thrL - 300), arm=RC_HIGH, angle=RC_HIGH), print_every=0.7)
 elif MAN == "gyro_tip":
     # THE TIP-OVER PAIR (floor_dive contrast pattern, Daniel's spec): slow
     # flight starves the rotor - rpm decays with the inflow, the lateral
@@ -1201,13 +1309,18 @@ elif MAN == "gyro_tip":
         # research (and the plant's measured rpm decay)
         loop(14, "slow-decay", rc_ch(thr=1120, arm=RC_HIGH, angle=RC_HIGH, sel=_sel),
              print_every=0.7)
-        loop(5, "tip-window", rc_ch(thr=1120, arm=RC_HIGH, angle=RC_HIGH, sel=_sel),
+        # cap-only contract: the guard may NOT power above the starving
+        # stick - the catch is attitude-only until the pilot reacts. The
+        # story therefore gives the throttle back EARLY (a real pilot
+        # answers the tip with power); the guard bridges the attitude.
+        # the two flights need DIFFERENT timings under cap-only: the MANUAL
+        # proof must ride the tip into the ground (long window, the power
+        # comes too late by design); the GUARD flight models the real
+        # pilot - power back EARLY, the guard bridges the attitude until it
+        _tw = 2 if GUARD else 5
+        loop(_tw, "tip-window", rc_ch(thr=1120, arm=RC_HIGH, angle=RC_HIGH, sel=_sel),
              print_every=0.7)
-        # aftermath: without the guard this is wreckage by now; with it the
-        # guard has caught every excursion (twice from 80 m) and the pilot
-        # giving the throttle back gets a FLYING aircraft - 1700 is the
-        # cruise value that holds level, the story must end airborne
-        loop(10, "after", rc_ch(thr=1700, arm=RC_HIGH, angle=RC_HIGH, sel=_sel),
+        loop(15 - _tw, "after", rc_ch(thr=1700, arm=RC_HIGH, angle=RC_HIGH, sel=_sel),
              print_every=0.7)
 elif MAN == "inverted_stick":
     # ANGLE-semantics stick offsets: half aileron must carve a HELD angle
