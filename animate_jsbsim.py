@@ -195,10 +195,25 @@ if FLOOR_ABS is not None:
     _gx, _gy = _np.meshgrid([_cx-L, _cx+L], [_cy-L, _cy+L])
     ax.plot_surface(_gx, _gy, _np.full_like(_gx, FLOOR_ABS),
                     color="#d62728", alpha=0.12, zorder=0)
+if MAN == "soar":
+    # mark the thermal the glider circles as a column at the loiter centre
+    # (mean position over the soar phase, in the ax east/north frame): the
+    # glider spirals UP around it - the whole point of the video
+    _si = [i for i in range(len(ph)) if ph[i] == "soar"]
+    if _si:
+        _te = sum(y[i] for i in _si) / len(_si)   # ax x-axis = east (log y)
+        _tn = sum(x[i] for i in _si) / len(_si)   # ax y-axis = north (log x)
+        ax.plot([_te, _te], [_tn, _tn], [_z0, _z0 + 2 * L], color="#ff7f0e",
+                lw=1.6, alpha=0.6, zorder=4)
+        ax.text(_te, _tn, _z0 + 2 * L, "thermal", color="#ff7f0e",
+                fontsize=9, ha="center", va="bottom")
 trail, = ax.plot([], [], [], color="0.6", lw=1.2)
 seg_lines = [ax.plot([], [], [], lw=2.5)[0] for _ in SEGS]
-txt = ax.text2D(0.02, 0.95, "", transform=ax.transAxes, fontsize=10)
-mtxt = ax.text2D(0.02, 0.88, "", transform=ax.transAxes, fontsize=14, fontweight="bold", color="#d62728")
+# Header stack, vertically separated so the centered phase caption
+# (anntxt, top) never lands on the long telemetry line (txt) - they used
+# to sit 0.04 apart and the caption crossed the middle of the status row.
+txt = ax.text2D(0.02, 0.90, "", transform=ax.transAxes, fontsize=10)
+mtxt = ax.text2D(0.02, 0.83, "", transform=ax.transAxes, fontsize=14, fontweight="bold", color="#d62728")
 
 # EVENT NARRATION in the film itself (Daniel): a per-frame caption derived
 # from the LOGGED data - phase labels for the figures, and the FW safety
@@ -226,6 +241,7 @@ PHASE_TEXT = {
     "dive-chop": "PANIC DIVE: throttle chopped, elevator held...",
     "dive-nofloor": "same dive, floor OFF: it punches through",
     "cruise": "cruise",
+    "soar": "SOARING: motor at idle, circling the thermal, climbing on the lift",
     "slow-decay": "throttle cut: the rotor is starving",
     "tip-window": "rotor starved: tilt authority is gone",
     "after": "throttle returned",
@@ -251,7 +267,7 @@ def annotate(i):
     return (PHASE_TEXT.get(ph_i, ""), "0.25")
 
 
-anntxt = ax.text2D(0.5, 0.99, "", transform=ax.transAxes, fontsize=12,
+anntxt = ax.text2D(0.5, 1.01, "", transform=ax.transAxes, fontsize=12,
                    fontweight="bold", ha="center", va="top")
 # --- right column: four identical panels (same x, width, height, spacing) ---
 import os
@@ -428,8 +444,17 @@ def frame(i):
                     [sw_y(k, sw_detent(k, sw[k][i])) for k in SW_COLS])
     return seg_lines + [trail, txt, mtxt, anntxt, marker, markerP, markerO, dotL, dotR, levers] + list(bars)
 
-anim = FuncAnimation(fig, frame, frames=len(rows), interval=60, blit=False)
 outdir = "docs/videos"; os.makedirs(outdir, exist_ok=True)
+# --still N: render a single frame to PNG and exit (layout verification,
+# no full video render)
+if "--still" in sys.argv:
+    _n = min(max(int(sys.argv[sys.argv.index("--still") + 1]), 0), len(rows) - 1)
+    frame(_n)
+    _sp = f"{outdir}/still_{MAN}.png"
+    fig.savefig(_sp, dpi=100)
+    print("wrote still", _n, "->", _sp)
+    raise SystemExit
+anim = FuncAnimation(fig, frame, frames=len(rows), interval=60, blit=False)
 outpath = f"{outdir}/jsbsim_{MAN}.mp4"
 # AV1 (libaom), quality-based: ~5x smaller than the old fixed-bitrate
 # H.264 for this line-graphics content -- the videos live in the repo and
