@@ -314,18 +314,35 @@ for _ in range(N // 4):
 check("G3a pure twist about body-up: reduced == 0, full == psi * up_body", ok_twist)
 check("G3b rotation about axis perpendicular to body-up: full == reduced", ok_tilt)
 
-# G4 yaw-anchored figure target: q_yaw(psi) (x) TargetFromRP(r,p) == rpy(r,p,psi)
+# G4 yaw-anchored figure target, in the FIRMWARE convention.
+# imu.c feeds imuComputeQuaternionFromRPY with NEGATED yaw (imu.c:260/700),
+# so the attitude quaternion for a measured heading psi is rpy(r,p,-psi).
+# The anchor built from attitude.values.yaw must use q_yaw(-psi) so the
+# target lands in that same convention (orientation_hold.c anchor fix).
+# The original G4 proved the textbook +psi identity - true in isolation,
+# blind to the call-site negation, and it passed while the firmware target
+# was 2*psi off in yaw (the funjet hang bug).
 ok = True
+ok_neg = True
 for _ in range(N // 4):
     r_, p_, psi = rng.uniform(-170, 170), rng.uniform(-85, 85), rng.uniform(-170, 170)
-    h = np.radians(psi) / 2
+    q_att = inav_rpy_to_quat(r_, p_, -psi)          # attitude as imu.c holds it
+    h = np.radians(-psi) / 2                        # anchor: NEGATED measured yaw
     q_yaw = np.array([np.cos(h), 0, 0, np.sin(h)])
     q = inav_mul(q_yaw, inav_rpy_to_quat(r_, p_, 0.0))
-    qr = inav_rpy_to_quat(r_, p_, psi)
-    if min(np.abs(q - qr).max(), np.abs(q + qr).max()) > 1e-9:
+    if min(np.abs(q - q_att).max(), np.abs(q + q_att).max()) > 1e-9:
         ok = False
         break
-check("G4 q_yaw(psi) (x) TargetFromRP(r,p) == rpy(r,p,psi) (anchor composition)", ok)
+    # negative control: the +psi anchor must NOT match (except psi ~ 0 mod 180)
+    hb = np.radians(psi) / 2
+    q_bug = inav_mul(np.array([np.cos(hb), 0, 0, np.sin(hb)]),
+                     inav_rpy_to_quat(r_, p_, 0.0))
+    if abs(np.sin(np.radians(psi))) > 1e-3 and \
+            min(np.abs(q_bug - q_att).max(), np.abs(q_bug + q_att).max()) < 1e-6:
+        ok_neg = False
+        break
+check("G4a q_yaw(-psi) (x) TargetFromRP(r,p) == attitude-convention rpy(r,p,-psi)", ok)
+check("G4b +psi anchor diverges from the attitude convention (bug control)", ok_neg)
 
 # H. Generalized spin command: body rates along the earth-vertical (expressed
 #    in the body frame) rotate purely about the vertical and leave the tilt
