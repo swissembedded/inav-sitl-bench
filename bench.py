@@ -81,7 +81,12 @@ def rc_neutral() -> list[int]:
     return rc
 
 
-def provision():
+def provision(core: bool = False):
+    """core=True provisions a PLAIN-MASTER build (the standalone crash-
+    detection PR binary): only settings/boxes that exist upstream - no
+    aerobatics feature bit, no OHOLD/figure/floor/soar mode ranges, no
+    fig_assist_* settings, no TVC mixer rule. Everything else identical,
+    so crash_test/snap_neg fly the same way on both binaries."""
     msp = MspClient()
     print("API", msp.api_version())
     msp.set_setting("receiver_type", struct.pack("<B", 3))     # SIM (SITL)
@@ -107,7 +112,8 @@ def provision():
     # the whole aerobatics suite is runtime-gated now (FW_LAUNCH pattern,
     # default OFF upstream): without this bit none of the OHOLD boxes
     # exist and every figure flight would silently fly bare ANGLE
-    msp.enable_feature(1 << 5)                                # FEATURE_FW_AEROBATICS
+    if not core:
+        msp.enable_feature(1 << 5)                            # FEATURE_FW_AEROBATICS
     # loiter radius must match the airframe's speed or the FW position
     # controller hunts a physically unflyable circle (measured: at 45-50 kt
     # the physical radius at full 35 deg bank is 77-98 m - exactly at the
@@ -136,7 +142,8 @@ def provision():
     msp.set_servo_mixer_rule(0, 0, 0)   # servo 0 <- stabilized roll
     msp.set_servo_mixer_rule(1, 1, 1)   # servo 1 <- stabilized pitch
     msp.set_servo_mixer_rule(2, 2, 2)   # servo 2 <- stabilized yaw
-    msp.set_servo_mixer_rule(3, 3, 62)  # servo 3 <- TVC pitch (thrust vectoring)
+    if not core:
+        msp.set_servo_mixer_rule(3, 3, 62)  # servo 3 <- TVC pitch (thrust vectoring)
     msp.set_mode_range(0, PERM_ARM, CH_ARM - 4, 1700, 2100)
     # Three switches, no mode ever shares a position with a mutually-exclusive
     # one and no range is ever remapped in flight:
@@ -147,27 +154,31 @@ def provision():
     #   CH_SELECT = attitude-target selector: off / INVERT / KNIFE L / KNIFE R /
     #               HANG; combines with FSPIN to give inverted / knife-edge spins
     msp.set_mode_range(1, PERM_ANGLE, CH_ANGLE - 4, 1750, 2100)
-    msp.set_mode_range(2, PERM_INVERTED, CH_SELECT - 4, 1150, 1390)
-    msp.set_mode_range(3, PERM_KNIFELEFT, CH_SELECT - 4, 1390, 1630)
-    msp.set_mode_range(4, PERM_KNIFERIGHT, CH_SELECT - 4, 1630, 1870)
-    msp.set_mode_range(5, PERM_PROPHANG, CH_SELECT - 4, 1870, 2100)
-    msp.set_mode_range(6, PERM_ALTFLOOR, CH_INVERTED - 4, 1700, 2100)
-    msp.set_mode_range(7, PERM_FIGROLL, CH_ANGLE - 4, 1450, 1600)
-    msp.set_mode_range(8, PERM_FIGLOOP, CH_ANGLE - 4, 1150, 1300)
-    msp.set_mode_range(9, PERM_FIGSEQ, CH_ANGLE - 4, 1600, 1750)
-    # slot 10 MUST stay contiguous: the FC compacts the mode-range list at
-    # the first gap on save, a gapped slot silently disappears after reboot
-    msp.set_mode_range(10, PERM_FSPIN, CH_ANGLE - 4, 1300, 1450)
-    # slot 11: thermal SOARING on CH_INVERTED low band (1150-1400), clear of the
-    # ALT FLOOR band (1700-2100) on the same channel - soar and floor never
-    # engage together in a bench flight, and both stay armable per their band
-    msp.set_mode_range(11, PERM_SOARING, CH_INVERTED - 4, 1150, 1400)
-    # tuned against the JSBSim aerobat3d plant (2026-07-10): altitude spans
-    # over a 22 s figure: inverted 3.1 m, roll_hold 1.1 m, knife L/R 6 m
-    # (slightly sinking, never climbing)
-    msp.set_setting("fig_assist_z_gain", struct.pack("<B", 45))
-    msp.set_setting("fig_assist_vz_gain", struct.pack("<B", 3))
-    msp.set_setting("fig_assist_max", struct.pack("<B", 20))
+    if not core:
+        # (core skips everything below to the fig_assist block: plain
+        # master knows none of the aerobatic boxes or settings; ARM+ANGLE
+        # in slots 0/1 keep the mode-range list contiguous and complete)
+        msp.set_mode_range(2, PERM_INVERTED, CH_SELECT - 4, 1150, 1390)
+        msp.set_mode_range(3, PERM_KNIFELEFT, CH_SELECT - 4, 1390, 1630)
+        msp.set_mode_range(4, PERM_KNIFERIGHT, CH_SELECT - 4, 1630, 1870)
+        msp.set_mode_range(5, PERM_PROPHANG, CH_SELECT - 4, 1870, 2100)
+        msp.set_mode_range(6, PERM_ALTFLOOR, CH_INVERTED - 4, 1700, 2100)
+        msp.set_mode_range(7, PERM_FIGROLL, CH_ANGLE - 4, 1450, 1600)
+        msp.set_mode_range(8, PERM_FIGLOOP, CH_ANGLE - 4, 1150, 1300)
+        msp.set_mode_range(9, PERM_FIGSEQ, CH_ANGLE - 4, 1600, 1750)
+        # slot 10 MUST stay contiguous: the FC compacts the mode-range list at
+        # the first gap on save, a gapped slot silently disappears after reboot
+        msp.set_mode_range(10, PERM_FSPIN, CH_ANGLE - 4, 1300, 1450)
+        # slot 11: thermal SOARING on CH_INVERTED low band (1150-1400), clear of the
+        # ALT FLOOR band (1700-2100) on the same channel - soar and floor never
+        # engage together in a bench flight, and both stay armable per their band
+        msp.set_mode_range(11, PERM_SOARING, CH_INVERTED - 4, 1150, 1400)
+        # tuned against the JSBSim aerobat3d plant (2026-07-10): altitude spans
+        # over a 22 s figure: inverted 3.1 m, roll_hold 1.1 m, knife L/R 6 m
+        # (slightly sinking, never climbing)
+        msp.set_setting("fig_assist_z_gain", struct.pack("<B", 45))
+        msp.set_setting("fig_assist_vz_gain", struct.pack("<B", 3))
+        msp.set_setting("fig_assist_max", struct.pack("<B", 20))
     # the per-regime pitch trims (knife L/R +7 here) were a pre-throttle-assist
     # crutch for the ~6 m knife sink; they are fixed FW inits at neutral 0 now
     # (RAUS-11 settings reduction) and no longer settable. The integrating hover
@@ -991,6 +1002,8 @@ def contain():
 
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else "smoke"
-    {"provision": provision, "smoke": smoke, "scenarios": scenarios, "edge": edge,
+    {"provision": provision,
+     "provision-core": lambda: provision(core=True),
+     "smoke": smoke, "scenarios": scenarios, "edge": edge,
      "floor": floor, "tvc": tvc, "figures": figures, "sequence": sequence,
      "lock": lock, "hover": hover, "snap": snap, "contain": contain}[cmd]()
